@@ -1,0 +1,31 @@
+{
+  "app_name": "SiempreDeLocal",
+  "version": "1.0.0",
+  "environment": "development",
+  "debug_mode": true,
+  "maintenance_mode": false,
+  "max_file_size": 10,
+  "allowed_extensions": [
+    "jpg",
+    "png",
+    "jpeg",
+    "gif",
+    "pdf"
+  ],
+  "timezone": "America/Bogota",
+  "language": "es",
+  "email_enabled": false,
+  "notifications_enabled": true,
+  "backup_frequency": "daily",
+  "session_timeout": 30,
+  "max_login_attempts": 5,
+  "force_https": false,
+  "log_access": true,
+  "smtp_server": "",
+  "smtp_port": 587,
+  "smtp_ssl": true,
+  "smtp_username": "",
+  "smtp_password": "",
+  "email_from": "noreply@siempredelocal.com",
+  "email_template": "<html><body><h1>Notificación</h1><p>{{message}}</p></body></html>"
+}
