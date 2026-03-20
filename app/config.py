@@ -1,5 +1,6 @@
 # backend/app/config.py
 import os
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -21,6 +22,16 @@ class Settings:
         _raw_db_url = _raw_db_url.replace("postgres://", "postgresql+psycopg://", 1)
     elif _raw_db_url.startswith("postgresql://"):
         _raw_db_url = _raw_db_url.replace("postgresql://", "postgresql+psycopg://", 1)
+
+    # Forzar SSL en entornos remotos si no está definido
+    if _raw_db_url.startswith("postgresql+psycopg://"):
+        parts = urlsplit(_raw_db_url)
+        host = parts.hostname or ""
+        qs = dict(parse_qsl(parts.query))
+        if host not in ("localhost", "127.0.0.1") and "sslmode" not in qs:
+            qs["sslmode"] = "require"
+            parts = parts._replace(query=urlencode(qs))
+            _raw_db_url = urlunsplit(parts)
 
     DATABASE_URL = _raw_db_url
 

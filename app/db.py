@@ -4,6 +4,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
 from dotenv import load_dotenv
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
 # Cargar variables de entorno
 load_dotenv()
@@ -23,6 +24,23 @@ elif raw_db_url.startswith("postgresql://"):
     raw_db_url = raw_db_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
 DATABASE_URL = raw_db_url
+
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL no está configurada.")
+
+# Forzar SSL en entornos remotos si no está definido
+if DATABASE_URL.startswith("postgresql+psycopg://"):
+    parts = urlsplit(DATABASE_URL)
+    host = parts.hostname or ""
+    qs = dict(parse_qsl(parts.query))
+    if host not in ("localhost", "127.0.0.1") and "sslmode" not in qs:
+        qs["sslmode"] = "require"
+        parts = parts._replace(query=urlencode(qs))
+        DATABASE_URL = urlunsplit(parts)
+
+    # Log seguro para depurar (sin credenciales)
+    safe_host = host or "unknown"
+    print(f"[db] Using postgres host: {safe_host}")
 
 # Determinar si es SQLite o PostgreSQL
 is_sqlite = "sqlite" in DATABASE_URL
