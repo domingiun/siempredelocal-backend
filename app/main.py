@@ -47,7 +47,10 @@ app.add_middleware(
         "http://localhost:3000",
         "http://192.168.1.16:5173",
         "http://192.168.1.4:5173",
-        "http://192.168.1.6:5173"
+        "http://192.168.1.6:5173",
+        "https://siempredelocal.com",
+        "https://www.siempredelocal.com",
+        "https://siempredelocal-frontend.vercel.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
