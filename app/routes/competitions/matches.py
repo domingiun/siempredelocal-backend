@@ -280,6 +280,8 @@ def get_matches(
             "competition_id": match.competition_id,
             "round_id": match.round_id,
             "match_date": match.match_date,
+            "created_at": match.created_at,
+            "updated_at": match.updated_at,
             "stadium": match.stadium,
             "city": match.city,
 

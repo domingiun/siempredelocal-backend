@@ -193,6 +193,8 @@ class MatchResponse(BaseModel):
 class MatchSimpleResponse(BaseModel):
     id: int
     match_date: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     stadium: Optional[str]
     city: Optional[str]
     home_team_id: int
