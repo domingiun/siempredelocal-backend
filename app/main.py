@@ -32,14 +32,26 @@ from app.routes.competitions import (competition,teams as competition_teams,matc
 from app.routes.teams import stats as team_stats
 from app.routes.admin import system 
 
-# Crear tablas
-Base.metadata.create_all(bind=engine)
-
 app = FastAPI(
     title="SiempreDeLocal API",
     version="1.0.0",
     description="API para gestión de competencias de fútbol"
 )
+
+
+@app.on_event("startup")
+async def startup():
+    """
+    Crea las tablas al arrancar en vez de al importar el módulo.
+    Esto evita que un fallo de conexión a la DB mate el proceso antes
+    de que FastAPI pueda siquiera responder un healthcheck.
+    """
+    try:
+        Base.metadata.create_all(bind=engine)
+        print("[startup] Tablas verificadas/creadas correctamente.")
+    except Exception as e:
+        print(f"[startup] ADVERTENCIA: No se pudo conectar a la base de datos: {e}")
+        print("[startup] La app arranca de todas formas — revisa DATABASE_URL en Railway.")
 
 # M6: Registrar rate limiter
 app.state.limiter = limiter
