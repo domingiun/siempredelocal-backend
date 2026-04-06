@@ -5,14 +5,24 @@ from sqlalchemy import select
 from app.db import get_db
 from app.models.bet.UserWallet import UserWallet
 from app.schemas.bet.UserWallet import UserWalletRead
-from app.routes.bet.transactions import purchase_credits
-from app.schemas.bet.transactions import PurchaseCreditsRequest, PurchaseCreditsResponse
+from app.core.security import get_current_user
+from app.core.dependencies import get_current_admin_user
+from app.models.user.user import User
 
 router = APIRouter(prefix="/wallets", tags=["UserWallet"])
 
+
 # Consultar Mi Cajón de usuario
 @router.get("/{user_id}", response_model=UserWalletRead)
-def get_wallet(user_id: int, session: Session = Depends(get_db)):
+def get_wallet(
+    user_id: int,
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Solo el propio usuario o un admin puede ver el wallet
+    if current_user.id != user_id and current_user.role.upper() != "ADMIN":
+        raise HTTPException(status_code=403, detail="No tienes permiso para ver este cajón")
+
     wallet = session.execute(
         select(UserWallet).where(UserWallet.user_id == user_id)
     ).scalars().first()
@@ -26,9 +36,18 @@ def get_wallet(user_id: int, session: Session = Depends(get_db)):
         "balance_PTS": wallet.balance_cop
     }
 
-# Recargar créditos (agregar a Mi Cajón)
+
+# Recargar créditos manualmente (solo ADMIN — uso interno/debug)
 @router.post("/buy", response_model=UserWalletRead)
-def buy_credits(user_id: int, credits: int, session: Session = Depends(get_db)):
+def buy_credits(
+    user_id: int,
+    credits: int,
+    session: Session = Depends(get_db),
+    admin_user: User = Depends(get_current_admin_user)
+):
+    if credits <= 0:
+        raise HTTPException(status_code=400, detail="La cantidad de créditos debe ser positiva")
+
     wallet = session.execute(
         select(UserWallet).where(UserWallet.user_id == user_id)
     ).scalars().first()
@@ -42,14 +61,3 @@ def buy_credits(user_id: int, credits: int, session: Session = Depends(get_db)):
     session.commit()
     session.refresh(wallet)
     return wallet
-
-router.post("/buy-credits", response_model=PurchaseCreditsResponse)
-def buy_credits(
-    request: PurchaseCreditsRequest,
-    user_id: int,
-    session: Session = Depends(get_db)
-):
-    """
-    Recargar créditos (nueva versión con transacciones)
-    """
-    return purchase_credits(request, user_id, session)

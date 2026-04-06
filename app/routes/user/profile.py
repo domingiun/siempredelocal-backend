@@ -3,17 +3,20 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import Dict, Any
 import os
-from datetime import datetime
 
 from app.db import get_db
 from app.models.user.user import User
 from app.schemas.user.user import UserResponse, UserUpdate, ProfileUpdate
 from app.core.security import get_password_hash, get_current_user
+from app.utils.file_upload import (
+    ALLOWED_EXTENSIONS, validate_image_mime,
+    read_with_size_limit, generate_safe_filename,
+)
+from app.utils.storage import upload_file, delete_file, extract_filename_from_url
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
-AVATAR_UPLOAD_DIR = "uploads/avatars"
-os.makedirs(AVATAR_UPLOAD_DIR, exist_ok=True)
+AVATAR_FOLDER = "avatars"
 
 # -----------------------------
 # GET CURRENT USER PROFILE
@@ -83,39 +86,40 @@ async def upload_my_avatar(
     current_user: User = Depends(get_current_user)
 ):
     """Subir avatar del usuario actual"""
-    allowed_extensions = {'.png', '.jpg', '.jpeg', '.gif', '.webp'}
+    # Validar extensión
     file_extension = os.path.splitext(file.filename or "")[1].lower()
-
-    if file_extension not in allowed_extensions:
+    if file_extension not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail=f"Formato de archivo no permitido. Use: {', '.join(allowed_extensions)}"
+            detail=f"Formato no permitido. Use: {', '.join(ALLOWED_EXTENSIONS)}"
         )
 
-    filename = f"user_{current_user.id}_{int(datetime.now().timestamp())}{file_extension}"
-    file_path = os.path.join(AVATAR_UPLOAD_DIR, filename)
+    # Leer con límite de tamaño (A2)
+    file_data = await read_with_size_limit(file)
 
+    # Validar magic bytes reales (A1)
+    validate_image_mime(file_data[:16], file_extension)
+
+    # Nombre no predecible (M1)
+    filename = generate_safe_filename(file_extension)
+
+    # C8: Subir a Supabase Storage (persistente, no se pierde en redeploy)
     try:
-        with open(file_path, "wb") as buffer:
-            while chunk := await file.read(1024 * 1024):
-                buffer.write(chunk)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error al guardar el archivo: {str(e)}"
+        public_url = upload_file(
+            folder=AVATAR_FOLDER,
+            filename=filename,
+            file_data=file_data,
+            content_type=file.content_type or "image/jpeg",
         )
+    except Exception:
+        raise HTTPException(status_code=500, detail="Error al subir el archivo")
 
-    # Eliminar avatar anterior si existe
-    if current_user.avatar_url and current_user.avatar_url.startswith("/static/avatars/"):
-        old_filename = current_user.avatar_url.split("/")[-1]
-        old_path = os.path.join(AVATAR_UPLOAD_DIR, old_filename)
-        if os.path.exists(old_path):
-            try:
-                os.remove(old_path)
-            except Exception:
-                pass
+    # Eliminar avatar anterior de Supabase si existe
+    if current_user.avatar_url:
+        old_filename = extract_filename_from_url(current_user.avatar_url)
+        delete_file(AVATAR_FOLDER, old_filename)
 
-    current_user.avatar_url = f"/static/avatars/{filename}"
+    current_user.avatar_url = public_url
     db.commit()
     db.refresh(current_user)
     return current_user

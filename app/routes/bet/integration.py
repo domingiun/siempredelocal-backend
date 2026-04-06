@@ -4,7 +4,11 @@ import traceback
 from sqlalchemy.orm import Session
 from sqlalchemy import text, func
 from typing import List, Optional
+from datetime import timedelta
 from app.db import get_db
+from app.core.security import get_current_user
+from app.core.dependencies import get_current_admin_user
+from app.models.user.user import User
 from app.services.bet_service import BetService
 from app.schemas.bet.integration import (
     AvailableMatchesResponse,
@@ -86,7 +90,8 @@ def get_available_matches(
 @router.post("/create-betdate", response_model=BetDateCreatedResponse)
 def create_betdate(
     request: CreateBetDateRequest,
-    session: Session = Depends(get_db)
+    session: Session = Depends(get_db),
+    admin_user: User = Depends(get_current_admin_user)
 ):
     """
     Crear una nueva fecha de pronósticos (solo administradores)
@@ -134,23 +139,17 @@ def create_betdate(
 @router.post("/place-bet", response_model=PlaceBetResponse)
 def place_bet(
     request: PlaceBetRequest,
-    user_id: int,
-    session: Session = Depends(get_db)
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Colocar una apuesta en una fecha disponible
-    
-    - **user_id**: ID del usuario (query parameter)
+
     - **bet_date_id**: ID de la fecha de pronósticos
     - **predictions**: Lista de 10 predicciones con marcadores
     """
+    user_id = current_user.id
     try:
-        print("=== place_bet INICIO ===")
-        print(f"user_id: {user_id}")
-        try:
-            print(f"payload: {request.dict()}")
-        except Exception:
-            print("payload: <no se pudo serializar>")
         # 1. Verificar que la fecha de pronósticos exista y esté abierta
         betdate = session.query(BetDate).get(request.bet_date_id)
         if not betdate:
@@ -176,8 +175,14 @@ def place_bet(
             session.commit()
             raise ValueError("Las pronósticos para esta fecha ya cerraron")
         
-        # 2. Verificar que el usuario tenga en mi cajon y créditos suficientes
-        wallet = session.query(UserWallet).filter_by(user_id=user_id).first()
+        # 2. Verificar créditos — SELECT FOR UPDATE bloquea la fila durante la transacción
+        #    para evitar race condition de doble gasto (C4)
+        wallet = (
+            session.query(UserWallet)
+            .filter_by(user_id=user_id)
+            .with_for_update()
+            .first()
+        )
         if not wallet:
             wallet = UserWallet(
                 user_id=user_id,
@@ -466,7 +471,13 @@ def get_integration_stats(session: Session = Depends(get_db)):
 
 
 @router.get("/user-status/{user_id}", response_model=UserBettingStatus)
-def get_user_betting_status(user_id: int, session: Session = Depends(get_db)):
+def get_user_betting_status(
+    user_id: int,
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if current_user.id != user_id and current_user.role.upper() != "ADMIN":
+        raise HTTPException(status_code=403, detail="No tienes permiso para ver este estado")
     """
     Obtener estado de pronósticos de un usuario
     """

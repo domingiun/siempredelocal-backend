@@ -17,7 +17,10 @@ from app.models.bet.UserWallet import UserWallet
 from pydantic import BaseModel
 from datetime import datetime
 from app.core.dependencies import admin_required, get_current_admin_user
+from app.core.security import get_current_user
 from app.models.user.user import User
+from app.models.bet.audit_log import AuditLog
+import json
 
 router = APIRouter(prefix="/transactions", tags=["Transactions"])
 
@@ -30,8 +33,8 @@ class AdminCreditAdjustmentRequest(BaseModel):
 @router.post("/purchase-credits", response_model=PurchaseCreditsResponse)
 def purchase_credits(
     request: PurchaseCreditsRequest,
-    user_id: int,
-    session: Session = Depends(get_db)
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Recargar créditos usando un plan específico
@@ -39,7 +42,7 @@ def purchase_credits(
     try:
         result = TransactionService.purchase_credits(
             session=session,
-            user_id=user_id,
+            user_id=current_user.id,
             plan_id=request.plan_id,
             payment_method=request.payment_method,
             payment_reference=request.payment_reference
@@ -66,18 +69,18 @@ def purchase_credits(
 @router.post("/convert-to-cash", response_model=ConvertCreditsResponse)
 def convert_credits_to_cash(
     request: ConvertCreditsRequest,
-    user_id: int,
-    session: Session = Depends(get_db)
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Convertir créditos a dinero en efectivo
     """
     try:
+        # C7: la tasa de conversión es fija en el servicio (no la controla el usuario)
         result = TransactionService.convert_credits_to_cash(
             session=session,
-            user_id=user_id,
-            credits_to_convert=request.credits_to_convert,
-            conversion_rate=request.conversion_rate or 4500
+            user_id=current_user.id,
+            credits_to_convert=request.credits_to_convert
         )
         
         return ConvertCreditsResponse(
@@ -102,16 +105,16 @@ def convert_credits_to_cash(
 @router.post("/request/points-to-credits")
 def request_points_to_credits(
     request: PointsToCreditsRequest,
-    user_id: int,
-    session: Session = Depends(get_db)
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Solicitar conversión de puntos (balance) a créditos (requiere aprobación ADMIN)
     """
-    wallet = session.query(UserWallet).filter_by(user_id=user_id).first()
+    wallet = session.query(UserWallet).filter_by(user_id=current_user.id).first()
     if not wallet:
         wallet = UserWallet(
-            user_id=user_id,
+            user_id=current_user.id,
             credits=0,
             balance_cop=0,
             total_credits_purchased=0,
@@ -132,7 +135,7 @@ def request_points_to_credits(
 
     transaction = TransactionService.create_transaction(
         session=session,
-        user_id=user_id,
+        user_id=current_user.id,
         transaction_type=TransactionType.ADMIN_ADJUSTMENT,
         amount_cop=-request.points_to_convert,
         amount_credits=credits_to_add,
@@ -156,13 +159,13 @@ def request_points_to_credits(
 @router.post("/request/withdraw")
 def request_withdraw_points(
     request: WithdrawPointsRequest,
-    user_id: int,
-    session: Session = Depends(get_db)
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Solicitar retiro de puntos (requiere aprobación ADMIN)
     """
-    wallet = session.query(UserWallet).filter_by(user_id=user_id).first()
+    wallet = session.query(UserWallet).filter_by(user_id=current_user.id).first()
     if not wallet:
         raise HTTPException(status_code=404, detail="Wallet no encontrada")
 
@@ -175,7 +178,7 @@ def request_withdraw_points(
 
     transaction = TransactionService.create_transaction(
         session=session,
-        user_id=user_id,
+        user_id=current_user.id,
         transaction_type=TransactionType.ADMIN_ADJUSTMENT,
         amount_cop=-request.amount_pts,
         amount_credits=0,
@@ -201,8 +204,11 @@ def get_transaction_history(
     transaction_type: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
-    session: Session = Depends(get_db)
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    if current_user.id != user_id and current_user.role.upper() != "ADMIN":
+        raise HTTPException(status_code=403, detail="No tienes permiso para ver este historial")
     """
     Obtener historial de transacciones de un usuario
     """
@@ -321,33 +327,16 @@ def get_available_plans(session: Session = Depends(get_db)):
     return {"plans": result}
 
 @router.post("/admin/transactions/{transaction_id}/approve")
-def approve_credit_purchase(
+def approve_credit_purchase_legacy(
     transaction_id: int,
     session: Session = Depends(get_db),
     admin_user: User = Depends(get_current_admin_user)
 ):
     """
-    Aprobar recarga de créditos (solo ADMIN)
+    Aprobar recarga de créditos (solo ADMIN).
+    M8: Redirige al endpoint canónico para mantener compatibilidad de URL.
     """
-    transaction = session.query(Transaction).get(transaction_id)
-
-    if not transaction:
-        raise HTTPException(status_code=404, detail="Transacción no encontrada")
-
-    if transaction.status != TransactionStatus.PENDING:
-        raise HTTPException(status_code=400, detail="La transacción no está pendiente")
-
-    if transaction.transaction_type != TransactionType.CREDIT_PURCHASE:
-        raise HTTPException(status_code=400, detail="Tipo de transacción inválido")
-
-    TransactionService.complete_transaction(session, transaction.id)
-
-    return {
-        "success": True,
-        "message": "Recarga de créditos aprobada",
-        "transaction_id": transaction.id,
-        "approved_by": admin_user.id
-    }
+    return approve_credit_purchase(transaction_id, session, admin_user)
 
 @router.get("/admin/pending-credit-purchases")
 def get_pending_credit_purchases(
@@ -396,6 +385,7 @@ def approve_credit_purchase(
 ):
     """
     Aprobar recarga de créditos (ADMIN)
+    M7: Registra la aprobación en audit_log inmutable.
     """
     transaction = session.query(Transaction).get(transaction_id)
 
@@ -408,12 +398,25 @@ def approve_credit_purchase(
     if transaction.status != TransactionStatus.PENDING:
         raise HTTPException(status_code=400, detail="La transacción no está pendiente")
 
-    # Completa la transacción y actualiza wallet
     TransactionService.complete_transaction(
         session=session,
         transaction_id=transaction.id,
         update_wallet=True
     )
+
+    # M7: Registro inmutable de auditoría
+    session.add(AuditLog(
+        admin_user_id=admin_user.id,
+        admin_username=admin_user.username,
+        action="approve_credit_purchase",
+        resource_type="transaction",
+        resource_id=transaction.id,
+        details=json.dumps({
+            "user_id": transaction.user_id,
+            "credits_added": transaction.amount_credits,
+            "amount_cop": transaction.amount_cop,
+        }),
+    ))
 
     session.commit()
 
@@ -765,7 +768,21 @@ def approve_request(
         raise HTTPException(status_code=400, detail="La transacción no está pendiente")
 
     TransactionService.complete_transaction(session=session, transaction_id=transaction.id, update_wallet=True)
-    transaction.description = (transaction.description or "") + f" | Aprobada por admin {admin_user.id}"
+
+    # M7: Registro inmutable de auditoría (no modificamos description como único trail)
+    session.add(AuditLog(
+        admin_user_id=admin_user.id,
+        admin_username=admin_user.username,
+        action="approve_request",
+        resource_type="transaction",
+        resource_id=transaction.id,
+        details=json.dumps({
+            "user_id": transaction.user_id,
+            "reference_type": transaction.reference_type,
+            "amount_cop": transaction.amount_cop,
+            "amount_credits": transaction.amount_credits,
+        }),
+    ))
     session.commit()
 
     return {

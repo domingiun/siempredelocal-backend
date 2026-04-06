@@ -1,5 +1,5 @@
 # backend/app/routes/user/auth.py
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Response
 from datetime import datetime, timedelta
 import hashlib
 import os
@@ -8,6 +8,10 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import text
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
 
 from app.db import get_db
 from app.models.user.user import User
@@ -49,7 +53,8 @@ def authenticate_user(db: Session, username: str, password: str):
     return user
 
 @router.post("/register", response_model=UserResponse)
-def register(user_data: UserCreate, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")  # M6: Máximo 5 registros por IP por minuto
+def register(request: Request, user_data: UserCreate, db: Session = Depends(get_db)):
 
     db_user = db.query(User).filter(
         (User.email == user_data.email) | (User.username == user_data.username)
@@ -98,8 +103,19 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
 
     return db_user
 
+def _is_production() -> bool:
+    """Determina si estamos en producción para aplicar flags de seguridad en cookies."""
+    return os.environ.get("DEBUG", "False").lower() not in ("true", "1")
+
+
 @router.post("/login")
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+@limiter.limit("10/minute")  # M6: Máximo 10 intentos de login por IP por minuto
+def login(
+    request: Request,
+    response: Response,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db)
+):
     user = authenticate_user(db, form_data.username, form_data.password)
     if not user:
         raise HTTPException(
@@ -110,11 +126,31 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     access_token = create_access_token(
         data={"sub": user.username, "role": user.role, "id": user.id}
     )
+
+    # Establecer cookie httpOnly para proteger contra XSS (C5)
+    is_prod = _is_production()
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,              # JS no puede leerla
+        secure=is_prod,            # Solo HTTPS en producción
+        samesite="none" if is_prod else "lax",  # Cross-origin en prod
+        max_age=60 * 60 * 24,      # 24 horas
+        path="/",
+    )
+
     return {
-        "access_token": access_token,
+        "access_token": access_token,   # Mantenemos para compatibilidad Swagger/apps móviles
         "token_type": "bearer",
         "user": UserResponse.model_validate(user)
     }
+
+
+@router.post("/logout")
+def logout(response: Response):
+    """Cierra sesión eliminando la cookie httpOnly."""
+    response.delete_cookie(key="access_token", path="/", samesite="none", secure=_is_production())
+    return {"message": "Sesión cerrada correctamente"}
 
 @router.get("/me", response_model=UserResponse)
 def read_users_me(current_user: User = Depends(get_current_user)):

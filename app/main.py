@@ -1,10 +1,16 @@
 # backend/app/main.py
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from app.db import engine, Base
 from app.models import *
 import os
+
+# M6: Rate limiter global — por IP
+limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 
 # Importar routers
 from app.routes.bet.Bet import router as bet_router
@@ -35,9 +41,13 @@ app = FastAPI(
     description="API para gestión de competencias de fútbol"
 )
 
-# Archivos estáticos (logos, avatars)
-os.makedirs("uploads", exist_ok=True)
-app.mount("/static", StaticFiles(directory="uploads"), name="static")
+# M6: Registrar rate limiter
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
+# C8: Los archivos ya no se sirven desde disco local.
+# Las URLs de avatars/logos apuntan directamente a Supabase Storage (CDN público).
 
 # Configurar CORS
 app.add_middleware(
@@ -53,8 +63,9 @@ app.add_middleware(
         "https://siempredelocal-frontend.vercel.app"
     ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    # M2: Restringir a métodos y headers necesarios — no usar "*"
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "Accept", "X-Requested-With"],
 )
 
 # Incluir rutas de usuarios

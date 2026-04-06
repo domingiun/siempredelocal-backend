@@ -1,16 +1,18 @@
 # backend/app/core/security.py
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
+from typing import Optional
 import bcrypt
 
 from app.db import get_db
 from app.models.user.user import User
 from app.config import settings
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+# Se mantiene para compatibilidad con Swagger UI y clientes API directos
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verificar contraseña usando bcrypt directamente"""
@@ -69,36 +71,55 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     )
     return encoded_jwt
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    """Obtener usuario actual desde el token JWT"""
+def _decode_token(token: str, credentials_exception: HTTPException) -> str:
+    """Decodifica y valida un JWT, devuelve el username."""
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+        return username
+    except JWTError:
+        raise credentials_exception
+
+
+def get_current_user(
+    request: Request,
+    bearer_token: Optional[str] = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> User:
+    """
+    Obtener usuario actual desde JWT.
+    Prioridad: httpOnly cookie → Authorization Bearer header.
+    Esto permite al frontend usar cookies seguras mientras Swagger/apps
+    siguen funcionando con el header.
+    """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="No se pudieron validar las credenciales",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
-    try:
-        payload = jwt.decode(
-            token, 
-            settings.SECRET_KEY, 
-            algorithms=[settings.ALGORITHM]
-        )
-        
-        username: str = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-        
-    except JWTError:
+
+    # 1. Intentar cookie httpOnly (más seguro contra XSS)
+    token: Optional[str] = request.cookies.get("access_token")
+
+    # 2. Fallback a Authorization: Bearer (Swagger, apps móviles, API clients)
+    if not token:
+        token = bearer_token
+
+    if not token:
         raise credentials_exception
-    
+
+    username = _decode_token(token, credentials_exception)
+
     user = db.query(User).filter(User.username == username).first()
     if user is None:
         raise credentials_exception
-    
+
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Usuario inactivo"
         )
-    
+
     return user

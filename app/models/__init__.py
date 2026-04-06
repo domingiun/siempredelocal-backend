@@ -8,13 +8,19 @@ from .competition.team import Team, CompetitionTeam
 from .competition.match import Match, MatchStatus
 from .competition.round import Round, RoundType
 
+# M7: Tabla de auditoría inmutable para operaciones admin
+from .bet.audit_log import AuditLog
+
 __all__ = [
     # User models
     "User", "UserRole",
-    
+
     # Competition models
     "Competition", "CompetitionType", "CompetitionFormat", "CompetitionStatus",
     "Team", "CompetitionTeam",
     "Match", "MatchStatus",
-    "Round", "RoundType"
+    "Round", "RoundType",
+
+    # Audit
+    "AuditLog",
 ]

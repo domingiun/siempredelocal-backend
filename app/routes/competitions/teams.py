@@ -4,13 +4,16 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 import logging
 import os
-import shutil
-from datetime import datetime
 
 from app.db import get_db
 from app.models.user.user import User
 from app.core.security import get_current_user
 from app.core.dependencies import admin_required
+from app.utils.file_upload import (
+    ALLOWED_EXTENSIONS, validate_image_mime,
+    read_with_size_limit, generate_safe_filename,
+)
+from app.utils.storage import upload_file, delete_file, extract_filename_from_url
 
 from app.models.competition.team import Team
 from app.schemas.competition.team import (
@@ -20,9 +23,7 @@ from app.schemas.competition.team import (
 router = APIRouter(prefix="/teams", tags=["teams"])
 logger = logging.getLogger(__name__)
 
-# Directorio para subir logos
-UPLOAD_DIR = "uploads/logos"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+LOGO_FOLDER = "logos"  # Carpeta dentro del bucket de Supabase
 
 # -----------------------------
 # GET TEAMS (independientes)
@@ -207,35 +208,38 @@ async def upload_team_logo(
     if not team:
         raise HTTPException(status_code=404, detail="Equipo no encontrado")
     
-    # Validar que sea una imagen
-    allowed_extensions = {'.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'}
-    file_extension = os.path.splitext(file.filename)[1].lower()
-    
-    if file_extension not in allowed_extensions:
+    # A1+M1: validar extensión
+    file_extension = os.path.splitext(file.filename or "")[1].lower()
+    if file_extension not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail=f"Formato de archivo no permitido. Use: {', '.join(allowed_extensions)}"
+            detail=f"Formato de archivo no permitido. Use: {', '.join(ALLOWED_EXTENSIONS)}"
         )
-    
-    # Generar nombre único para el archivo
-    filename = f"team_{team_id}_{int(datetime.now().timestamp())}{file_extension}"
-    file_path = os.path.join(UPLOAD_DIR, filename)
-    
-    # Guardar el archivo
+
+    # A2: leer con límite de tamaño
+    file_data = await read_with_size_limit(file)
+
+    # A1: validar magic bytes reales
+    validate_image_mime(file_data[:16], file_extension)
+
+    # Nombre no predecible (M1)
+    filename = generate_safe_filename(file_extension)
+
+    # C8: Subir a Supabase Storage
     try:
-        with open(file_path, "wb") as buffer:
-            # Leer el archivo en chunks para manejar archivos grandes
-            while chunk := await file.read(1024 * 1024):  # 1MB chunks
-                buffer.write(chunk)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error al guardar el archivo: {str(e)}"
+        logo_url = upload_file(
+            folder=LOGO_FOLDER,
+            filename=filename,
+            file_data=file_data,
+            content_type=file.content_type or "image/jpeg",
         )
-    
-    # Actualizar la URL del logo en la base de datos
-    # Para desarrollo local, usa una ruta relativa
-    logo_url = f"/static/logos/{filename}"
+    except Exception:
+        raise HTTPException(status_code=500, detail="Error al subir el archivo")
+
+    # Eliminar logo anterior si existe
+    if team.logo_url:
+        delete_file(LOGO_FOLDER, extract_filename_from_url(team.logo_url))
+
     team.logo_url = logo_url
     db.commit()
     
@@ -264,16 +268,11 @@ def delete_team_logo(
     if not team.logo_url:
         raise HTTPException(status_code=400, detail="El equipo no tiene logo")
     
-    # Extraer el nombre del archivo de la URL
+    # C8: Eliminar logo de Supabase Storage
     try:
-        filename = team.logo_url.split("/")[-1]
-        file_path = os.path.join(UPLOAD_DIR, filename)
-        
-        # Eliminar el archivo físico si existe
-        if os.path.exists(file_path):
-            os.remove(file_path)
+        delete_file(LOGO_FOLDER, extract_filename_from_url(team.logo_url))
     except Exception as e:
-        logger.warning(f"No se pudo eliminar el archivo físico del logo: {str(e)}")
+        logger.warning(f"No se pudo eliminar el logo de Supabase: {str(e)}")
     
     # Eliminar la URL de la base de datos
     team.logo_url = None

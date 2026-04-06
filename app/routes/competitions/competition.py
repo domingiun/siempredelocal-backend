@@ -5,7 +5,12 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 import logging
 import os
-from datetime import datetime
+
+from app.utils.file_upload import (
+    ALLOWED_EXTENSIONS, validate_image_mime,
+    read_with_size_limit, generate_safe_filename,
+)
+from app.utils.storage import upload_file, delete_file, extract_filename_from_url
 
 from app.db import get_db
 from app.models.user.user import User
@@ -25,8 +30,7 @@ from app.services.standings_service import recalculate_competition_standings
 router = APIRouter(prefix="/competitions", tags=["competitions"])
 logger = logging.getLogger(__name__)
 
-UPLOAD_DIR = "uploads/competition-logos"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+COMPETITION_LOGO_FOLDER = "competition-logos"  # Carpeta dentro del bucket de Supabase
 
 # -----------------------------
 # GET COMPETITIONS
@@ -143,38 +147,39 @@ async def upload_competition_logo(
     if not competition:
         raise HTTPException(status_code=404, detail="Competencia no encontrada")
 
-    allowed_extensions = {'.png', '.jpg', '.jpeg', '.gif', '.webp'}
+    # A1+M1: validar extensión
     file_extension = os.path.splitext(file.filename or "")[1].lower()
-
-    if file_extension not in allowed_extensions:
+    if file_extension not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail=f"Formato de archivo no permitido. Use: {', '.join(allowed_extensions)}"
+            detail=f"Formato de archivo no permitido. Use: {', '.join(ALLOWED_EXTENSIONS)}"
         )
 
-    filename = f"competition_{competition_id}_{int(datetime.now().timestamp())}{file_extension}"
-    file_path = os.path.join(UPLOAD_DIR, filename)
+    # A2: leer con límite de tamaño
+    file_data = await read_with_size_limit(file)
 
+    # A1: validar magic bytes reales
+    validate_image_mime(file_data[:16], file_extension)
+
+    # Nombre no predecible (M1)
+    filename = generate_safe_filename(file_extension)
+
+    # C8: Subir a Supabase Storage
     try:
-        with open(file_path, "wb") as buffer:
-            while chunk := await file.read(1024 * 1024):
-                buffer.write(chunk)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error al guardar el archivo: {str(e)}"
+        logo_url = upload_file(
+            folder=COMPETITION_LOGO_FOLDER,
+            filename=filename,
+            file_data=file_data,
+            content_type=file.content_type or "image/jpeg",
         )
+    except Exception:
+        raise HTTPException(status_code=500, detail="Error al subir el archivo")
 
-    if competition.logo_url and competition.logo_url.startswith("/static/competition-logos/"):
-        old_filename = competition.logo_url.split("/")[-1]
-        old_path = os.path.join(UPLOAD_DIR, old_filename)
-        if os.path.exists(old_path):
-            try:
-                os.remove(old_path)
-            except Exception:
-                pass
+    # Eliminar logo anterior de Supabase si existe
+    if competition.logo_url:
+        delete_file(COMPETITION_LOGO_FOLDER, extract_filename_from_url(competition.logo_url))
 
-    competition.logo_url = f"/static/competition-logos/{filename}"
+    competition.logo_url = logo_url
     db.commit()
 
     logger.info(f"Logo subido para competencia {competition.name}: {competition.logo_url}")

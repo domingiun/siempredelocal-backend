@@ -221,7 +221,11 @@ class BetService:
             )
             session.add(bet_pred)
         
-        # Descontar créditos
+        # A4: Validar balance ANTES de descontar para evitar saldo negativo
+        if wallet.credits < betdate.required_credits:
+            raise ValueError(
+                f"Créditos insuficientes. Necesitas {betdate.required_credits}, tienes {wallet.credits}"
+            )
         wallet.credits -= betdate.required_credits
         
         # Añadir al premio (1950 por crédito)

@@ -3,6 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import Optional, Dict, Any
 from app.db import get_db
+from app.core.dependencies import get_current_admin_user
+from app.models.user.user import User
 from app.models.bet.BetDate import BetDate
 from app.models.bet.Bet import Bet
 from app.models.bet.UserWallet import UserWallet
@@ -31,7 +33,8 @@ def finalize_betdate(
     bet_date_id: int,
     request: Optional[FinalizeRequest] = None,
     background_tasks: BackgroundTasks = None,
-    session: Session = Depends(get_db)
+    session: Session = Depends(get_db),
+    admin_user: User = Depends(get_current_admin_user)
 ):
     """
     Finalizar una fecha de pronósticos y distribuir premios
@@ -239,7 +242,11 @@ def finalize_betdate(
 
 
 @router.post("/close/{bet_date_id}", response_model=CloseBetDateResponse)
-def close_betdate(bet_date_id: int, session: Session = Depends(get_db)):
+def close_betdate(
+    bet_date_id: int,
+    session: Session = Depends(get_db),
+    admin_user: User = Depends(get_current_admin_user)
+):
     """
     Cerrar fecha de pronósticos (solo cambiar estado)
     """
@@ -283,6 +290,7 @@ def close_betdate(bet_date_id: int, session: Session = Depends(get_db)):
 def reopen_betdate(
     bet_date_id: int,
     request: ReopenBetDateRequest,
+    admin_user: User = Depends(get_current_admin_user),
     session: Session = Depends(get_db)
 ):
     """
@@ -327,7 +335,11 @@ def reopen_betdate(
 
 
 @router.get("/validate/{bet_date_id}", response_model=FinalizationValidation)
-def validate_finalization(bet_date_id: int, session: Session = Depends(get_db)):
+def validate_finalization(
+    bet_date_id: int,
+    session: Session = Depends(get_db),
+    admin_user: User = Depends(get_current_admin_user)
+):
     """
     Validar si se puede finalizar una fecha
     """
@@ -395,7 +407,11 @@ def validate_finalization(bet_date_id: int, session: Session = Depends(get_db)):
 
 
 @router.get("/summary/{bet_date_id}", response_model=FinalizationSummary)
-def get_finalization_summary(bet_date_id: int, session: Session = Depends(get_db)):
+def get_finalization_summary(
+    bet_date_id: int,
+    session: Session = Depends(get_db),
+    admin_user: User = Depends(get_current_admin_user)
+):
     """
     Obtener resumen completo de finalización
     """
