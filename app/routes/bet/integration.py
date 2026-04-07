@@ -448,17 +448,18 @@ def get_integration_stats(session: Session = Depends(get_db)):
     ).count()
     
     total_bets = session.query(Bet).count()
-    
+    total_users = session.query(User).count()
+
     # Calcular premio total
     betdates = session.query(BetDate).all()
     total_prize_pool = sum(bd.prize_cop + bd.accumulated_prize for bd in betdates)
-    
+
     # Promedio de pronósticos por fecha
     average_bets_per_date = total_bets / total_betdates if total_betdates > 0 else 0
-    
+
     # Competencia más popular (simplificado)
     most_popular_competition = None
-    
+
     return IntegrationStats(
         total_betdates=total_betdates,
         active_betdates=active_betdates,
@@ -466,7 +467,8 @@ def get_integration_stats(session: Session = Depends(get_db)):
         total_bets=total_bets,
         total_prize_pool=total_prize_pool,
         average_bets_per_date=average_bets_per_date,
-        most_popular_competition=most_popular_competition
+        most_popular_competition=most_popular_competition,
+        total_users=total_users,
     )
 
 

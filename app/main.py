@@ -30,7 +30,8 @@ from app.routes.user import auth, users, profile
 from app.routes.dashboard import router as dashboard_router
 from app.routes.competitions import (competition,teams as competition_teams,matches,rounds, standings, stats)
 from app.routes.teams import stats as team_stats
-from app.routes.admin import system 
+from app.routes.admin import system
+from app.routes.content.articles import router as articles_router
 
 app = FastAPI(
     title="SiempreDeLocal API",
@@ -110,6 +111,7 @@ app.include_router(bet_finalize_router)        # Rutas de finalización de fecha
 app.include_router(bet_transactions_router)    # Rutas de transacciones de pronósticos
 app.include_router(bet_pricing_router)         # Rutas de precios y planes de pronósticos
 app.include_router(bet_financial_router)       # Rutas de resumen financiero
+app.include_router(articles_router)            # Rutas de artículos del homepage
 
 @app.get("/")
 def read_root():

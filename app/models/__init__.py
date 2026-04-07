@@ -11,6 +11,9 @@ from .competition.round import Round, RoundType
 # M7: Tabla de auditoría inmutable para operaciones admin
 from .bet.audit_log import AuditLog
 
+# Contenido: artículos del admin para el homepage
+from .content.article import Article
+
 __all__ = [
     # User models
     "User", "UserRole",
@@ -23,4 +26,7 @@ __all__ = [
 
     # Audit
     "AuditLog",
+
+    # Content
+    "Article",
 ]

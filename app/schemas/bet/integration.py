@@ -185,6 +185,7 @@ class IntegrationStats(BaseModel):
     total_prize_pool: int
     average_bets_per_date: float
     most_popular_competition: Optional[str]
+    total_users: int = 0
     
     class Config:
         from_attributes = True
