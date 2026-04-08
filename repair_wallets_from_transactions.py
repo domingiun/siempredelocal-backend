@@ -1,6 +1,6 @@
 # backend/repair_wallets_from_transactions.py
 """
-Recalcula los saldos de Mi Cajón (credits y balance_cop) a partir de las
+Recalcula los saldos de Mi Cuenta (credits y balance_cop) a partir de las
 transacciones COMPLETED. Útil para corregir premios ya finalizados que no
 se reflejaron en Puntos disponibles.
 """

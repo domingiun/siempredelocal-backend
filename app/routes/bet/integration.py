@@ -505,7 +505,7 @@ def get_user_betting_status(
         or 0
     )
     
-    # Mi Cajón
+    # Mi Cuenta
     wallet = session.query(UserWallet).filter_by(user_id=user_id).first()
     credits_available = wallet.credits if wallet else 0
     balance_cop = wallet.balance_cop if wallet else 0

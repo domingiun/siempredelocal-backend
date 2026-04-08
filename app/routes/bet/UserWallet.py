@@ -12,7 +12,7 @@ from app.models.user.user import User
 router = APIRouter(prefix="/wallets", tags=["UserWallet"])
 
 
-# Consultar Mi Cajón de usuario
+# Consultar Mi Cuenta de usuario
 @router.get("/{user_id}", response_model=UserWalletRead)
 def get_wallet(
     user_id: int,
@@ -27,7 +27,7 @@ def get_wallet(
         select(UserWallet).where(UserWallet.user_id == user_id)
     ).scalars().first()
     if not wallet:
-        raise HTTPException(status_code=404, detail="Mi Cajón no encontrado")
+        raise HTTPException(status_code=404, detail="Mi Cuenta no encontrada")
     return {
         "id": wallet.id,
         "user_id": wallet.user_id,
