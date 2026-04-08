@@ -11,7 +11,7 @@ from app.schemas.content.article import ArticleResponse, ArticleListItem
 from app.core.security import get_current_user
 from app.core.dependencies import get_current_admin_user
 from app.utils.file_upload import validate_image_mime, read_with_size_limit, generate_safe_filename, ALLOWED_EXTENSIONS
-from app.utils.storage import upload_file, delete_file, extract_filename_from_url
+from app.utils.storage import upload_file, delete_file, extract_filename_from_url, _client, BUCKET
 
 router = APIRouter(prefix="/articles", tags=["articles"])
 
@@ -43,6 +43,44 @@ async def _upload_image(file: UploadFile, folder: str) -> str:
         file_data=file_data,
         content_type=file.content_type or "image/jpeg",
     )
+
+
+# ─── Admin: listar imágenes del banco de Supabase Storage ───────────────────
+@router.get("/admin/images")
+async def list_images(
+    current_user: User = Depends(get_current_admin_user),
+):
+    """
+    Devuelve todas las imágenes del bucket de Supabase Storage.
+    Recorre las carpetas más útiles para artículos.
+    """
+    FOLDERS = ["article-images", "logos", "competition-logos", "author-photos", "avatars"]
+    result = []
+    try:
+        client = _client()
+        base_url = f"{client.supabase_url}/storage/v1/object/public/{BUCKET}"
+        for folder in FOLDERS:
+            try:
+                files = client.storage.from_(BUCKET).list(folder)
+                for f in (files or []):
+                    name = f.get("name", "")
+                    if not name or name.endswith("/"):
+                        continue
+                    # Solo imágenes
+                    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+                    if ext not in {"jpg", "jpeg", "png", "webp", "gif", "avif"}:
+                        continue
+                    result.append({
+                        "folder": folder,
+                        "name":   name,
+                        "url":    f"{base_url}/{folder}/{name}",
+                        "size":   f.get("metadata", {}).get("size", 0),
+                    })
+            except Exception:
+                pass  # Si una carpeta falla, continuamos con las demás
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error accediendo al banco de imágenes: {e}")
+    return result
 
 
 # ─── Público: listar artículos publicados ───────────────────────────────────
