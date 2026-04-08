@@ -286,23 +286,7 @@ def update_competition(
                 )
             )
     
-    # Validar transiciones de estado
-    if competition_data.status:
-        valid_transitions = {
-            CompetitionStatus.DRAFT.value: [CompetitionStatus.SCHEDULED.value],
-            CompetitionStatus.SCHEDULED.value: [CompetitionStatus.ONGOING.value, CompetitionStatus.CANCELLED.value],
-            CompetitionStatus.ONGOING.value: [CompetitionStatus.COMPLETED.value, CompetitionStatus.CANCELLED.value],
-        }
-        
-        current_status = competition.status
-        new_status = competition_data.status.value
-        
-        if (current_status in valid_transitions and 
-            new_status not in valid_transitions[current_status]):
-            raise HTTPException(
-                status_code=400,
-                detail=f"No se puede cambiar el estado de {current_status} a {new_status}"
-            )
+    # Sin restricción de transición de estado — admin puede cambiar libremente
     
     # Actualizar campos
     update_data = competition_data.dict(exclude_unset=True)
