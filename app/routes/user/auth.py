@@ -23,6 +23,7 @@ from app.core.security import (
     create_access_token,
     get_current_user
 )
+from app.utils.email import send_password_reset_email
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -198,11 +199,15 @@ def forgot_password(request: PasswordResetRequest, db: Session = Depends(get_db)
     db.add(reset_record)
     db.commit()
 
-    # TODO: Enviar email o WhatsApp con el link/token
-    # Modo dev: exponer link solo si DEBUG=true
+    frontend_url = os.getenv("FRONTEND_URL", "https://www.siempredelocal.com")
+    reset_link = f"{frontend_url}/reset-password?token={token}"
+
+    if request.channel == "email" and user.email:
+        send_password_reset_email(to=user.email, reset_link=reset_link)
+
+    # Exponer link en modo dev para pruebas sin email
     if os.getenv("DEBUG", "").lower() == "true":
-        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
-        response["dev_reset_link"] = f"{frontend_url}/reset-password?token={token}"
+        response["dev_reset_link"] = reset_link
 
     return response
 
