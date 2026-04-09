@@ -1185,12 +1185,13 @@ def api_name_preview(
     except ValueError:
         raise HTTPException(status_code=400, detail="Formato de fecha inválido. Usa YYYY-MM-DD")
 
+    # Ventana ampliada ±1 día para absorber desfases de zona horaria
     local_matches = (
         db.query(Match)
         .options(joinedload(Match.home_team), joinedload(Match.away_team))
         .filter(
-            Match.match_date >= day,
-            Match.match_date < day + timedelta(days=1),
+            Match.match_date >= day - timedelta(days=1),
+            Match.match_date < day + timedelta(days=2),
         )
         .all()
     )
