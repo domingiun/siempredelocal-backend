@@ -1143,6 +1143,132 @@ def get_matches_by_competition_and_round(
             "round_name": match.round.name if match.round else None,
             "round_number": match.round.round_number if match.round else None,
             "competition_name": match.competition.name if match.competition else None,
+            "api_fixture_id": match.api_fixture_id,
+            "api_synced_at": match.api_synced_at,
         })
 
     return result
+
+
+# ─────────────────────────────────────────────
+# API-FOOTBALL INTEGRATION — ADMIN ENDPOINTS
+# ─────────────────────────────────────────────
+
+@router.get("/admin/name-preview")
+def api_name_preview(
+    date: str = Query(..., description="Fecha YYYY-MM-DD"),
+    current_user: User = Depends(admin_required),
+    db: Session = Depends(get_db),
+):
+    """
+    Compara los nombres de equipos en nuestra BD con los nombres que usa api-football
+    para los partidos de una fecha dada.
+    Útil para detectar diferencias y renombrar equipos localmente.
+    """
+    from app.utils.api_football import search_fixtures_for_admin, is_configured
+    from app.tasks.sync_scores import normalize_name, names_match
+
+    if not is_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="API_FOOTBALL_KEY no configurada en Railway."
+        )
+
+    fixtures = search_fixtures_for_admin(date)
+    if not fixtures:
+        return {"date": date, "comparisons": [], "message": "Sin fixtures en api-football para esa fecha"}
+
+    # Partidos locales del mismo día
+    from datetime import datetime, timedelta
+    try:
+        day = datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Formato de fecha inválido. Usa YYYY-MM-DD")
+
+    local_matches = (
+        db.query(Match)
+        .options(joinedload(Match.home_team), joinedload(Match.away_team))
+        .filter(
+            Match.match_date >= day,
+            Match.match_date < day + timedelta(days=1),
+        )
+        .all()
+    )
+
+    comparisons = []
+
+    for f in fixtures:
+        # Buscar partido local que haga match
+        matched_local = None
+        for m in local_matches:
+            h = m.home_team.name if m.home_team else ""
+            a = m.away_team.name if m.away_team else ""
+            if names_match(h, f["home_team"]) and names_match(a, f["away_team"]):
+                matched_local = m
+                break
+
+        comparisons.append({
+            "fixture_id":         f["fixture_id"],
+            "league":             f["league"],
+            "api_home_team":      f["home_team"],
+            "api_away_team":      f["away_team"],
+            "api_home_logo":      f["home_logo"],
+            "api_away_logo":      f["away_logo"],
+            "api_status":         f["status_short"],
+            "api_home_score":     f["home_score"],
+            "api_away_score":     f["away_score"],
+            "local_match_id":     matched_local.id if matched_local else None,
+            "local_home_team":    matched_local.home_team.name if matched_local and matched_local.home_team else None,
+            "local_away_team":    matched_local.away_team.name if matched_local and matched_local.away_team else None,
+            "local_home_team_id": matched_local.home_team_id if matched_local else None,
+            "local_away_team_id": matched_local.away_team_id if matched_local else None,
+            "names_match":        matched_local is not None,
+        })
+
+    matched   = sum(1 for c in comparisons if c["names_match"])
+    unmatched = len(comparisons) - matched
+
+    return {
+        "date": date,
+        "api_fixtures": len(fixtures),
+        "local_matches": len(local_matches),
+        "matched": matched,
+        "unmatched": unmatched,
+        "comparisons": comparisons,
+    }
+
+
+@router.post("/admin/sync-now")
+def sync_now(
+    current_user: User = Depends(admin_required),
+):
+    """
+    Ejecuta la sincronización de resultados inmediatamente,
+    sin esperar el ciclo de 10 minutos del scheduler.
+    """
+    from app.tasks.scheduler import trigger_sync_now
+    from app.db import SessionLocal
+
+    result = trigger_sync_now(session_factory=SessionLocal)
+    return {"message": "Sincronización ejecutada", **result}
+
+
+@router.get("/admin/sync-status")
+def sync_status(
+    current_user: User = Depends(admin_required),
+    db: Session = Depends(get_db),
+):
+    """Estado general de la sincronización con api-football."""
+    from app.utils.api_football import is_configured, TRACKED_LEAGUES
+
+    total  = db.query(Match).count()
+    synced = db.query(Match).filter(Match.api_synced_at.isnot(None)).count()
+
+    return {
+        "api_configured":  is_configured(),
+        "tracked_leagues": sorted(TRACKED_LEAGUES),
+        "total_matches":   total,
+        "synced_matches":  synced,
+        "pending_matches": total - synced,
+    }
+

@@ -108,6 +108,7 @@ class MatchUpdate(BaseModel):
     postponed_date: Optional[datetime] = None
     postponed_details: Optional[str] = None
     observations: Optional[str] = None
+    api_fixture_id: Optional[int] = None
     
     @field_validator("status", mode="before")
     @classmethod
@@ -178,6 +179,8 @@ class MatchResponse(BaseModel):
     home_score: int
     away_score: int
     status: MatchStatus
+    api_fixture_id: Optional[int] = None
+    api_synced_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
     
@@ -201,19 +204,21 @@ class MatchSimpleResponse(BaseModel):
     away_team_id: int
     home_team_name: Optional[str]
     away_team_name: Optional[str]
-    home_team_logo: Optional[str]  # ← AÑADIR
-    away_team_logo: Optional[str]  # ← AÑADIR
+    home_team_logo: Optional[str]
+    away_team_logo: Optional[str]
     home_team_country: Optional[str]
     away_team_country: Optional[str]
     home_score: int
     away_score: int
     status: MatchStatus
-    competition_id: Optional[int] = None  # ← AÑADIR
-    round_id: Optional[int] = None  # ← AÑADIR
-    round_name: Optional[str] = None  # ← AÑADIR
-    round_number: Optional[int] = None  # ← AÑADIR
-    round_is_completed: Optional[bool] = None  # ← AÑADIR
-    competition_name: Optional[str] = None  # ← AÑADIR
+    competition_id: Optional[int] = None
+    round_id: Optional[int] = None
+    round_name: Optional[str] = None
+    round_number: Optional[int] = None
+    round_is_completed: Optional[bool] = None
+    competition_name: Optional[str] = None
+    api_fixture_id: Optional[int] = None
+    api_synced_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True

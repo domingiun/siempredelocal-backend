@@ -54,6 +54,24 @@ async def startup():
         print(f"[startup] ADVERTENCIA: No se pudo conectar a la base de datos: {e}")
         print("[startup] La app arranca de todas formas — revisa DATABASE_URL en Railway.")
 
+    # Iniciar scheduler de sincronización con api-football
+    try:
+        from app.tasks.scheduler import start_scheduler
+        from app.db import SessionLocal
+        start_scheduler(session_factory=SessionLocal)
+    except Exception as e:
+        print(f"[startup] ADVERTENCIA: No se pudo iniciar el scheduler: {e}")
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    """Detiene el scheduler limpiamente al apagar la app."""
+    try:
+        from app.tasks.scheduler import stop_scheduler
+        stop_scheduler()
+    except Exception:
+        pass
+
 # M6: Registrar rate limiter
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)

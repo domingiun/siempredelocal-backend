@@ -5,6 +5,10 @@ from sqlalchemy.sql import func
 from app.db import Base
 import enum
 
+# MIGRACIÓN: Si la tabla ya existe, ejecutar en Railway/producción:
+# ALTER TABLE matches ADD COLUMN IF NOT EXISTS api_fixture_id INTEGER;
+# ALTER TABLE matches ADD COLUMN IF NOT EXISTS api_synced_at TIMESTAMP;
+
 class MatchStatus(str, enum.Enum):
     """Estados del partido"""
     SCHEDULED = "Programado"
@@ -37,6 +41,10 @@ class Match(Base):
     default=MatchStatus.SCHEDULED
 )
     
+    # Integración api-football
+    api_fixture_id = Column(Integer, nullable=True, index=True, unique=True)
+    api_synced_at  = Column(DateTime, nullable=True)
+
     # Auditoría
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
