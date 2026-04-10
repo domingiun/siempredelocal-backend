@@ -64,8 +64,21 @@ def normalize_name(name: str) -> str:
 
 
 def names_match(name_a: str, name_b: str) -> bool:
-    """True si los nombres normalizados son idénticos."""
-    return normalize_name(name_a) == normalize_name(name_b)
+    """
+    True si los nombres normalizados coinciden.
+    Acepta coincidencia exacta o por contención (para casos como
+    '1899 Hoffenheim' vs 'Hoffenheim', o 'FC Augsburg' vs 'Augsburg').
+    Se exige que el token más corto tenga al menos 4 caracteres para
+    evitar falsos positivos con nombres muy cortos.
+    """
+    a = normalize_name(name_a)
+    b = normalize_name(name_b)
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
+    return len(shorter) >= 4 and shorter in longer
 
 
 # ── Lógica de matching ─────────────────────────────────────────────────────
