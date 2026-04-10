@@ -111,44 +111,6 @@ def find_fixture_for_match(match: Match, fixture_map: dict, all_fixtures: list) 
 
 # ── Verificación rápida en BD ──────────────────────────────────────────────
 
-def _should_sync_now(db: Session) -> bool:
-    """
-    Decide si vale la pena consumir un request de la API ahora.
-    Lógica: hay partido que empieza en los próximos 30 min,
-    o hay partido que empezó hace menos de 2.5 horas (podría estar en curso),
-    o hay algún partido con status 'En curso' ya registrado.
-
-    Con el scheduler a 30 min, esto usa máx ~6 requests por partido
-    (30 min antes + 2.5 horas de duración) → bien dentro del límite de 100/día
-    incluso con 8-10 partidos en el día.
-    """
-    now = datetime.utcnow()
-
-    # Partidos en curso ya detectados
-    live = db.query(Match).filter(
-        Match.status == "En curso"
-    ).count()
-    if live > 0:
-        return True
-
-    # Partido por empezar en los próximos 30 min
-    upcoming = db.query(Match).filter(
-        Match.status.notin_(list(TERMINAL_STATUSES)),
-        Match.match_date >= now,
-        Match.match_date <= now + timedelta(minutes=30),
-    ).count()
-    if upcoming > 0:
-        return True
-
-    # Partido que empezó hace menos de 2.5 horas (duración máxima con prórroga)
-    recent_start = db.query(Match).filter(
-        Match.status.notin_(list(TERMINAL_STATUSES)),
-        Match.match_date >= now - timedelta(hours=2, minutes=30),
-        Match.match_date <= now,
-    ).count()
-    return recent_start > 0
-
-
 # ── Tarea principal ────────────────────────────────────────────────────────
 
 def sync_today_scores(session_factory) -> dict:
@@ -168,7 +130,17 @@ def sync_today_scores(session_factory) -> dict:
     }
 
     try:
-        if not _should_sync_now(db):
+        # El scheduler solo llama esta función cuando hay partido activo.
+        # Verificación mínima: si no hay nada pendiente hoy/ayer, salir sin API call.
+        today     = datetime.utcnow().date()
+        yesterday = today - timedelta(days=1)
+        has_pending = db.query(Match).filter(
+            Match.status.notin_(list(TERMINAL_STATUSES)),
+            Match.match_date >= datetime.combine(yesterday, datetime.min.time()),
+            Match.match_date <= datetime.combine(today, datetime.max.time()),
+        ).count() > 0
+
+        if not has_pending:
             logger.debug("[sync] Sin partidos pendientes hoy — no se consume request")
             return result
 

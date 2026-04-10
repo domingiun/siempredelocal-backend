@@ -1253,15 +1253,27 @@ def api_name_preview(
 def sync_now(
     current_user: User = Depends(admin_required),
 ):
-    """
-    Ejecuta la sincronización de resultados inmediatamente,
-    sin esperar el ciclo de 10 minutos del scheduler.
-    """
+    """Ejecuta la sincronización de resultados inmediatamente."""
     from app.tasks.scheduler import trigger_sync_now
     from app.db import SessionLocal
 
     result = trigger_sync_now(session_factory=SessionLocal)
     return {"message": "Sincronización ejecutada", **result}
+
+
+@router.post("/admin/reschedule-matches")
+def reschedule_matches_endpoint(
+    current_user: User = Depends(admin_required),
+):
+    """
+    Re-escanea la BD y programa jobs para todos los partidos pendientes.
+    Llamar después de crear o editar partidos para que el scheduler los detecte.
+    """
+    from app.tasks.scheduler import reschedule_matches
+    from app.db import SessionLocal
+
+    count = reschedule_matches(session_factory=SessionLocal)
+    return {"message": f"{count} partido(s) nuevos programados en el scheduler"}
 
 
 @router.get("/admin/sync-status")
