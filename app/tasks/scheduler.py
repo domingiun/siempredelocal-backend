@@ -44,7 +44,6 @@ def run_and_reschedule(session_factory) -> None:
     """
     from app.tasks.sync_scores import sync_today_scores
     from app.models.competition.match import Match, MatchStatus
-    from app.db import get_db_session
 
     result = sync_today_scores(session_factory)
     logger.info(
