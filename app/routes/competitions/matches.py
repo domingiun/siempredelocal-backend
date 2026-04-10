@@ -1265,15 +1265,70 @@ def sync_now(
 def reschedule_matches_endpoint(
     current_user: User = Depends(admin_required),
 ):
-    """
-    Re-escanea la BD y programa jobs para todos los partidos pendientes.
-    Llamar después de crear o editar partidos para que el scheduler los detecte.
-    """
+    """Re-escanea la BD y programa jobs para todos los partidos pendientes."""
     from app.tasks.scheduler import reschedule_matches
     from app.db import SessionLocal
 
     count = reschedule_matches(session_factory=SessionLocal)
     return {"message": f"{count} partido(s) nuevos programados en el scheduler"}
+
+
+@router.get("/admin/scheduler-status")
+def scheduler_status(
+    current_user: User = Depends(admin_required),
+    db: Session = Depends(get_db),
+):
+    """Estado del scheduler: jobs programados y partidos pendientes en BD."""
+    from app.tasks.scheduler import _scheduler, MAX_MATCH_DURATION
+    from app.models.competition.match import Match, MatchStatus
+    from datetime import datetime, timedelta
+
+    now = datetime.utcnow()
+    terminal = {MatchStatus.FINISHED.value, MatchStatus.CANCELLED.value}
+
+    # Jobs activos en el scheduler
+    jobs = []
+    if _scheduler and _scheduler.running:
+        for job in _scheduler.get_jobs():
+            next_run = job.next_run_time
+            jobs.append({
+                "id": job.id,
+                "name": job.name or job.func.__name__ if hasattr(job, 'func') else job.id,
+                "next_run_utc": next_run.strftime("%Y-%m-%d %H:%M:%S UTC") if next_run else None,
+                "next_run_col": (next_run - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S COT") if next_run else None,
+            })
+
+    # Partidos pendientes en BD (próximas 36 horas)
+    upcoming_matches = (
+        db.query(Match)
+        .options()
+        .filter(
+            Match.status.notin_(list(terminal)),
+            Match.match_date >= now - MAX_MATCH_DURATION,
+            Match.match_date <= now + timedelta(hours=36),
+        )
+        .order_by(Match.match_date.asc())
+        .all()
+    )
+
+    matches_info = []
+    for m in upcoming_matches:
+        col_time = m.match_date - timedelta(hours=5) if m.match_date else None
+        matches_info.append({
+            "match_id": m.id,
+            "status": m.status,
+            "match_date_utc": m.match_date.strftime("%Y-%m-%d %H:%M UTC") if m.match_date else None,
+            "match_date_col": col_time.strftime("%Y-%m-%d %H:%M COT") if col_time else None,
+            "job_scheduled": any(j["id"] == f"match_start_{m.id}" for j in jobs),
+        })
+
+    return {
+        "scheduler_running": bool(_scheduler and _scheduler.running),
+        "total_jobs": len(jobs),
+        "jobs": sorted(jobs, key=lambda j: j["next_run_utc"] or ""),
+        "pending_matches_next_36h": len(matches_info),
+        "matches": matches_info,
+    }
 
 
 @router.get("/admin/sync-status")
