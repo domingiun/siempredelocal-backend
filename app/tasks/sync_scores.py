@@ -111,41 +111,42 @@ def find_fixture_for_match(match: Match, fixture_map: dict, all_fixtures: list) 
 
 # ── Verificación rápida en BD ──────────────────────────────────────────────
 
-def _has_pending_matches_today(db: Session) -> bool:
+def _should_sync_now(db: Session) -> bool:
     """
-    Verifica si hay partidos no finalizados cuya fecha sea hoy o ayer
-    Y que estén dentro de la ventana activa de sync:
-      - Hasta 2 horas ANTES del primer partido del día (pre-partido)
-      - Hasta 4 horas DESPUÉS del último partido del día (post-partido, por demoras)
-    Esto evita consumir las 100 requests del plan FREE en horas sin partidos.
-    """
-    now       = datetime.utcnow()
-    today     = now.date()
-    yesterday = today - timedelta(days=1)
-    window_start = datetime.combine(yesterday, datetime.min.time())
-    window_end   = datetime.combine(today,     datetime.max.time())
+    Decide si vale la pena consumir un request de la API ahora.
+    Lógica: hay partido que empieza en los próximos 30 min,
+    o hay partido que empezó hace menos de 2.5 horas (podría estar en curso),
+    o hay algún partido con status 'En curso' ya registrado.
 
-    pending = db.query(Match).filter(
+    Con el scheduler a 30 min, esto usa máx ~6 requests por partido
+    (30 min antes + 2.5 horas de duración) → bien dentro del límite de 100/día
+    incluso con 8-10 partidos en el día.
+    """
+    now = datetime.utcnow()
+
+    # Partidos en curso ya detectados
+    live = db.query(Match).filter(
+        Match.status == "En curso"
+    ).count()
+    if live > 0:
+        return True
+
+    # Partido por empezar en los próximos 30 min
+    upcoming = db.query(Match).filter(
         Match.status.notin_(list(TERMINAL_STATUSES)),
-        Match.match_date >= window_start,
-        Match.match_date <= window_end,
-    ).all()
+        Match.match_date >= now,
+        Match.match_date <= now + timedelta(minutes=30),
+    ).count()
+    if upcoming > 0:
+        return True
 
-    if not pending:
-        return False
-
-    # Ventana activa: 2h antes del primer partido hasta 4h después del último
-    match_times = [m.match_date for m in pending if m.match_date]
-    if not match_times:
-        return True  # sin fecha registrada, dejar pasar
-
-    earliest = min(match_times)
-    latest   = max(match_times)
-
-    active_from  = earliest - timedelta(hours=2)
-    active_until = latest   + timedelta(hours=4)
-
-    return active_from <= now <= active_until
+    # Partido que empezó hace menos de 2.5 horas (duración máxima con prórroga)
+    recent_start = db.query(Match).filter(
+        Match.status.notin_(list(TERMINAL_STATUSES)),
+        Match.match_date >= now - timedelta(hours=2, minutes=30),
+        Match.match_date <= now,
+    ).count()
+    return recent_start > 0
 
 
 # ── Tarea principal ────────────────────────────────────────────────────────
@@ -167,7 +168,7 @@ def sync_today_scores(session_factory) -> dict:
     }
 
     try:
-        if not _has_pending_matches_today(db):
+        if not _should_sync_now(db):
             logger.debug("[sync] Sin partidos pendientes hoy — no se consume request")
             return result
 

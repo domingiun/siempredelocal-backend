@@ -30,17 +30,17 @@ def start_scheduler(session_factory) -> None:
 
     _scheduler.add_job(
         func=sync_today_scores,
-        trigger=IntervalTrigger(minutes=10),
+        trigger=IntervalTrigger(minutes=30),
         args=[session_factory],
         id="sync_scores",
         name="Sync resultados api-football",
         replace_existing=True,
-        misfire_grace_time=120,  # Si se pierde un ciclo, ejecutar con hasta 2 min de retraso
-        max_instances=1,         # Nunca dos instancias simultáneas
+        misfire_grace_time=120,
+        max_instances=1,
     )
 
     _scheduler.start()
-    logger.info("[scheduler] Iniciado — sync de resultados cada 10 minutos")
+    logger.info("[scheduler] Iniciado — sync de resultados cada 30 minutos (máx ~6 requests/partido)")
 
 
 def stop_scheduler() -> None:
