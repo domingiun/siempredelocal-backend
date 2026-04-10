@@ -1174,15 +1174,17 @@ def api_name_preview(
             detail="API_FOOTBALL_KEY no configurada en Railway."
         )
 
-    fixtures = search_fixtures_for_admin(date)
+    fixtures, diag = search_fixtures_for_admin(date)
     if not fixtures:
         return {
             "date": date,
             "comparisons": [],
+            "diagnostico": diag,
             "message": (
-                f"Sin fixtures en api-football para {date} en ligas rastreadas "
-                f"(IDs: {sorted(TRACKED_LEAGUES)}). "
-                "Verifica que la Bundesliga (78) esté disponible en tu plan y que la fecha sea correcta."
+                f"Sin fixtures en ligas rastreadas para {date}. "
+                f"API devolvió {diag.get('total_raw', '?')} fixtures en total. "
+                f"Ligas vistas: {diag.get('leagues_seen', [])}. "
+                f"Ligas rastreadas: {sorted(TRACKED_LEAGUES)}."
             ),
         }
 

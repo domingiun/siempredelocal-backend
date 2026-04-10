@@ -124,13 +124,13 @@ def get_fixtures_by_date(target_date: str) -> list[dict]:
         return []
 
 
-def search_fixtures_for_admin(target_date: str) -> list[dict]:
+def search_fixtures_for_admin(target_date: str) -> tuple[list[dict], dict]:
     """
-    Retorna información rica de fixtures para el panel admin de vinculación.
-    Incluye nombres de equipos, liga y estado actual.
+    Retorna (fixtures_en_ligas_rastreadas, diagnostico).
+    diagnostico incluye total_raw, api_errors, leagues_seen para debug.
     """
     if not is_configured():
-        return []
+        return [], {"error": "API_FOOTBALL_KEY no configurada"}
 
     try:
         with httpx.Client(timeout=15) as client:
@@ -145,13 +145,14 @@ def search_fixtures_for_admin(target_date: str) -> list[dict]:
         all_items = data.get("response", [])
         api_errors = data.get("errors", {})
 
-        if api_errors:
-            logger.error(f"[api_football] search_fixtures_for_admin errors: {api_errors}")
+        leagues_seen = list({item["league"]["id"] for item in all_items})
 
-        logger.info(
-            f"[api_football] search_fixtures_for_admin: {len(all_items)} fixtures totales "
-            f"del API para {target_date} (errores: {api_errors})"
-        )
+        diag = {
+            "total_raw": len(all_items),
+            "api_errors": api_errors,
+            "leagues_seen": sorted(leagues_seen),
+            "tracked_leagues": sorted(TRACKED_LEAGUES),
+        }
 
         results = []
         for item in all_items:
@@ -177,12 +178,8 @@ def search_fixtures_for_admin(target_date: str) -> list[dict]:
                 "away_score":  item["goals"]["away"],
             })
 
-        logger.info(
-            f"[api_football] search_fixtures_for_admin: {len(results)}/{len(all_items)} "
-            f"en ligas rastreadas para {target_date}"
-        )
-        return results
+        return results, diag
 
     except Exception as exc:
         logger.error(f"[api_football] Error en search_fixtures_for_admin: {exc}")
-        return []
+        return [], {"error": str(exc)}
