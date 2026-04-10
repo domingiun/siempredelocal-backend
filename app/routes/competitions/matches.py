@@ -1283,3 +1283,54 @@ def sync_status(
         "pending_matches": total - synced,
     }
 
+
+@router.get("/admin/api-raw-test")
+def api_raw_test(
+    date: str = Query(..., description="Fecha YYYY-MM-DD"),
+    current_user: User = Depends(admin_required),
+):
+    """
+    Llama directamente a api-football y devuelve el diagnóstico crudo.
+    Útil para verificar qué devuelve el API sin filtros.
+    """
+    import httpx
+    from app.utils.api_football import API_KEY, BASE_URL, TRACKED_LEAGUES, is_configured
+
+    if not is_configured():
+        return {"error": "API_FOOTBALL_KEY no configurada"}
+
+    try:
+        with httpx.Client(timeout=15) as client:
+            resp = client.get(
+                f"{BASE_URL}/fixtures",
+                headers={"x-apisports-key": API_KEY},
+                params={"date": date},
+            )
+            data = resp.json()
+
+        all_items = data.get("response", [])
+        errors = data.get("errors", {})
+        account_info = data.get("get", "")
+        results_count = data.get("results", 0)
+
+        leagues_in_response = {}
+        for item in all_items:
+            lid = item["league"]["id"]
+            lname = item["league"]["name"]
+            leagues_in_response[lid] = lname
+
+        tracked_found = {k: v for k, v in leagues_in_response.items() if k in TRACKED_LEAGUES}
+        tracked_missing = [lid for lid in TRACKED_LEAGUES if lid not in leagues_in_response]
+
+        return {
+            "date_queried": date,
+            "http_status": resp.status_code,
+            "api_errors": errors,
+            "total_fixtures_from_api": results_count,
+            "tracked_leagues_found_in_response": tracked_found,
+            "tracked_leagues_missing_from_response": tracked_missing,
+            "all_leagues_in_response": leagues_in_response,
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
