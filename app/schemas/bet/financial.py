@@ -45,6 +45,7 @@ class UserCreditsSummary(BaseModel):
     avatar_url: Optional[str] = None
     credits_used: int = 0
     credits_available: int = 0
+    credits_used_last_betdate: int = 0
     total_invested_cop: int = 0
     total_prizes_cop: int = 0
 
@@ -52,4 +53,5 @@ class UserCreditsSummary(BaseModel):
 class UserCreditsSummaryResponse(BaseModel):
     start_date: Optional[date] = None
     end_date: Optional[date] = None
+    last_betdate_name: Optional[str] = None
     users: List[UserCreditsSummary]

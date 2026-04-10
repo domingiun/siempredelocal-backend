@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.constants.bet_constants import PRIZE_CONTRIBUTION_PER_CREDIT, PROFIT_PER_CREDIT
 from app.core.dependencies import get_current_admin_user
 from app.db import get_db
+from app.models.bet.Bet import Bet
 from app.models.bet.BetDate import BetDate
 from app.models.bet.BetPlan import BetPlan
 from app.models.bet.UserWallet import UserWallet
@@ -286,6 +287,25 @@ def get_users_credits_summary(
     )
     prizes_by_user = {int(user_id): int(total or 0) for user_id, total in prizes_rows}
 
+    # Última BetDate (por id desc) para mostrar créditos usados en ella
+    last_betdate = (
+        session.query(BetDate)
+        .order_by(BetDate.id.desc())
+        .first()
+    )
+    last_betdate_name = last_betdate.name if last_betdate else None
+
+    # Créditos usados en la última fecha (1 bet = 1 crédito)
+    last_betdate_usage: dict = {}
+    if last_betdate:
+        bet_rows = (
+            session.query(Bet.user_id, func.count(Bet.id))
+            .filter(Bet.bet_date_id == last_betdate.id)
+            .group_by(Bet.user_id)
+            .all()
+        )
+        last_betdate_usage = {int(uid): int(cnt) for uid, cnt in bet_rows}
+
     users = (
         session.query(User, UserWallet)
         .outerjoin(UserWallet, UserWallet.user_id == User.id)
@@ -304,6 +324,7 @@ def get_users_credits_summary(
                 avatar_url=user.avatar_url,
                 credits_used=used_by_user.get(user.id, 0),
                 credits_available=int(wallet.credits if wallet else 0),
+                credits_used_last_betdate=last_betdate_usage.get(user.id, 0),
                 total_invested_cop=invested_by_user.get(user.id, 0),
                 total_prizes_cop=prizes_by_user.get(user.id, 0),
             )
@@ -312,5 +333,6 @@ def get_users_credits_summary(
     return UserCreditsSummaryResponse(
         start_date=start_date,
         end_date=end_date,
+        last_betdate_name=last_betdate_name,
         users=response_users,
     )
