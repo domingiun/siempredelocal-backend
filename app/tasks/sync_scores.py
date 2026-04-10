@@ -142,6 +142,8 @@ def sync_today_scores(session_factory) -> dict:
         "no_match": 0,
         "errors": 0,
         "api_called": False,
+        "fixtures_fetched": 0,
+        "pending_in_db": 0,
     }
 
     try:
@@ -152,6 +154,7 @@ def sync_today_scores(session_factory) -> dict:
         today_str = date.today().isoformat()
         fixtures  = get_fixtures_by_date(today_str)
         result["api_called"] = True
+        result["fixtures_fetched"] = len(fixtures)
 
         if not fixtures:
             logger.info("[sync] api-football no devolvió fixtures para hoy")
@@ -172,6 +175,8 @@ def sync_today_scores(session_factory) -> dict:
             )
             .all()
         )
+
+        result["pending_in_db"] = len(pending)
 
         for match in pending:
             fixture = find_fixture_for_match(match, fixture_map, fixtures)
