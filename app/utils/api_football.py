@@ -81,8 +81,19 @@ def get_fixtures_by_date(target_date: str) -> list[dict]:
             resp.raise_for_status()
             data = resp.json()
 
+        all_items = data.get("response", [])
+        api_errors = data.get("errors", {})
+
+        if api_errors:
+            logger.error(f"[api_football] Errores del API para {target_date}: {api_errors}")
+
+        logger.info(
+            f"[api_football] Total fixtures devueltos por API: {len(all_items)} "
+            f"(errores: {api_errors})"
+        )
+
         results = []
-        for item in data.get("response", []):
+        for item in all_items:
             league_id = item["league"]["id"]
             if league_id not in TRACKED_LEAGUES:
                 continue
@@ -99,11 +110,12 @@ def get_fixtures_by_date(target_date: str) -> list[dict]:
                 "home_score":   home_score if home_score is not None else 0,
                 "away_score":   away_score if away_score is not None else 0,
                 "is_finished":  status_short in FINISHED_STATUSES,
+                "home_team":    item["teams"]["home"]["name"],
+                "away_team":    item["teams"]["away"]["name"],
             })
 
         logger.info(
-            f"[api_football] {len(results)} fixtures obtenidos para {target_date} "
-            f"(ligas rastreadas)"
+            f"[api_football] {len(results)}/{len(all_items)} fixtures en ligas rastreadas para {target_date}"
         )
         return results
 
@@ -130,8 +142,19 @@ def search_fixtures_for_admin(target_date: str) -> list[dict]:
             resp.raise_for_status()
             data = resp.json()
 
+        all_items = data.get("response", [])
+        api_errors = data.get("errors", {})
+
+        if api_errors:
+            logger.error(f"[api_football] search_fixtures_for_admin errors: {api_errors}")
+
+        logger.info(
+            f"[api_football] search_fixtures_for_admin: {len(all_items)} fixtures totales "
+            f"del API para {target_date} (errores: {api_errors})"
+        )
+
         results = []
-        for item in data.get("response", []):
+        for item in all_items:
             league_id = item["league"]["id"]
             if league_id not in TRACKED_LEAGUES:
                 continue
@@ -154,6 +177,10 @@ def search_fixtures_for_admin(target_date: str) -> list[dict]:
                 "away_score":  item["goals"]["away"],
             })
 
+        logger.info(
+            f"[api_football] search_fixtures_for_admin: {len(results)}/{len(all_items)} "
+            f"en ligas rastreadas para {target_date}"
+        )
         return results
 
     except Exception as exc:

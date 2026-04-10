@@ -1165,7 +1165,7 @@ def api_name_preview(
     para los partidos de una fecha dada.
     Útil para detectar diferencias y renombrar equipos localmente.
     """
-    from app.utils.api_football import search_fixtures_for_admin, is_configured
+    from app.utils.api_football import search_fixtures_for_admin, is_configured, TRACKED_LEAGUES
     from app.tasks.sync_scores import normalize_name, names_match
 
     if not is_configured():
@@ -1176,7 +1176,15 @@ def api_name_preview(
 
     fixtures = search_fixtures_for_admin(date)
     if not fixtures:
-        return {"date": date, "comparisons": [], "message": "Sin fixtures en api-football para esa fecha"}
+        return {
+            "date": date,
+            "comparisons": [],
+            "message": (
+                f"Sin fixtures en api-football para {date} en ligas rastreadas "
+                f"(IDs: {sorted(TRACKED_LEAGUES)}). "
+                "Verifica que la Bundesliga (78) esté disponible en tu plan y que la fecha sea correcta."
+            ),
+        }
 
     # Partidos locales del mismo día
     from datetime import datetime, timedelta
