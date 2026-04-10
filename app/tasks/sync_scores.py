@@ -114,18 +114,38 @@ def find_fixture_for_match(match: Match, fixture_map: dict, all_fixtures: list) 
 def _has_pending_matches_today(db: Session) -> bool:
     """
     Verifica si hay partidos no finalizados cuya fecha sea hoy o ayer
-    (ventana de ±1 día por desfases de zona horaria).
+    Y que estén dentro de la ventana activa de sync:
+      - Hasta 2 horas ANTES del primer partido del día (pre-partido)
+      - Hasta 4 horas DESPUÉS del último partido del día (post-partido, por demoras)
+    Esto evita consumir las 100 requests del plan FREE en horas sin partidos.
     """
-    today     = datetime.utcnow().date()
+    now       = datetime.utcnow()
+    today     = now.date()
     yesterday = today - timedelta(days=1)
     window_start = datetime.combine(yesterday, datetime.min.time())
     window_end   = datetime.combine(today,     datetime.max.time())
 
-    return db.query(Match).filter(
+    pending = db.query(Match).filter(
         Match.status.notin_(list(TERMINAL_STATUSES)),
         Match.match_date >= window_start,
         Match.match_date <= window_end,
-    ).count() > 0
+    ).all()
+
+    if not pending:
+        return False
+
+    # Ventana activa: 2h antes del primer partido hasta 4h después del último
+    match_times = [m.match_date for m in pending if m.match_date]
+    if not match_times:
+        return True  # sin fecha registrada, dejar pasar
+
+    earliest = min(match_times)
+    latest   = max(match_times)
+
+    active_from  = earliest - timedelta(hours=2)
+    active_until = latest   + timedelta(hours=4)
+
+    return active_from <= now <= active_until
 
 
 # ── Tarea principal ────────────────────────────────────────────────────────
