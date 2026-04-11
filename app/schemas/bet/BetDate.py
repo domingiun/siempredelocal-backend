@@ -15,9 +15,21 @@ class BetDateBase(BaseModel):
 class BetDateCreate(BetDateBase):
     match_ids: list[int]  
 
+class MatchBrief(BaseModel):
+    id: int
+    home_team_name: Optional[str] = None
+    away_team_name: Optional[str] = None
+    match_date: Optional[datetime] = None
+    competition_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
 class BetDateRead(BetDateBase):
     id: int
-    match_count: int = 0 
+    match_count: int = 0
+    bet_count: int = 0
+    matches: List[MatchBrief] = []
 
     class Config:
         from_attributes = True
