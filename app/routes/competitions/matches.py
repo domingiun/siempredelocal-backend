@@ -830,34 +830,40 @@ def get_today_matches(
     current_user: User = Depends(get_current_user)
 ):
     """Obtener partidos de hoy y próximos"""
-    # Usar hora local del servidor (match_date guardado como hora local sin tz)
-    now_local = datetime.now()
-    start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_local = start_local + timedelta(days=1)
-    start_local_naive = start_local.replace(tzinfo=None)
-    end_local_naive = end_local.replace(tzinfo=None)
-    
-    # Partidos de hoy
+    # Railway corre en UTC. Colombia es UTC-5.
+    # Para cubrir "hoy en Colombia" necesitamos:
+    #   - inicio: medianoche UTC (= 7pm día anterior Colombia, seguro)
+    #   - fin:    medianoche UTC + 29h (= 7pm de hoy Colombia, cubre hasta el último partido)
+    # En la práctica: un "día Colombia" va de UTC 05:00 a UTC 05:00 del día siguiente.
+    now_utc = datetime.utcnow()
+    COLOMBIA_OFFSET_HOURS = 5  # Colombia = UTC-5
+    # "hoy" en hora Colombia
+    now_col = now_utc - timedelta(hours=COLOMBIA_OFFSET_HOURS)
+    start_col = now_col.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_col   = start_col + timedelta(days=1)
+    # convertir de vuelta a UTC (lo que está almacenado en la BD)
+    start_utc_naive = start_col + timedelta(hours=COLOMBIA_OFFSET_HOURS)
+    end_utc_naive   = end_col   + timedelta(hours=COLOMBIA_OFFSET_HOURS)
+
+    # Partidos de hoy (todos los estados)
     matches_today = db.query(Match).options(
         joinedload(Match.home_team),
         joinedload(Match.away_team),
         joinedload(Match.competition)
     ).filter(
-        Match.match_date >= start_local_naive,
-        Match.match_date < end_local_naive,
-        (Match.status == MatchStatus.SCHEDULED.value) | (Match.status == "Programado")
+        Match.match_date >= start_utc_naive,
+        Match.match_date < end_utc_naive,
     ).order_by(Match.match_date).all()
     
-    # Partidos próximos (próximos 7 días)
-    next_week_end_local = end_local + timedelta(days=7)
-    next_week_end_local_naive = next_week_end_local.replace(tzinfo=None)
+    # Partidos próximos (próximos 7 días, solo programados)
+    next_week_end_utc = end_utc_naive + timedelta(days=7)
     matches_upcoming = db.query(Match).options(
         joinedload(Match.home_team),
         joinedload(Match.away_team),
         joinedload(Match.competition)
     ).filter(
-        Match.match_date >= end_local_naive,
-        Match.match_date < next_week_end_local_naive,
+        Match.match_date >= end_utc_naive,
+        Match.match_date < next_week_end_utc,
         (Match.status == MatchStatus.SCHEDULED.value) | (Match.status == "Programado")
     ).order_by(Match.match_date).all()
     
@@ -887,7 +893,7 @@ def get_today_matches(
     return {
         "today": format_matches(matches_today),
         "upcoming": format_matches(matches_upcoming),
-        "date": start_local.date().isoformat()
+        "date": start_col.date().isoformat()
     }
 
 # -----------------------------
