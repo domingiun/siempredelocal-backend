@@ -57,11 +57,22 @@ def run_and_reschedule(session_factory) -> None:
         now = datetime.utcnow()
         terminal = {MatchStatus.FINISHED.value, MatchStatus.CANCELLED.value}
 
-        still_active = db.query(Match).filter(
+        # Caso 1: partidos cuyo match_date está en la ventana de 3h (hora UTC almacenada)
+        in_window = db.query(Match).filter(
             Match.status.notin_(list(terminal)),
             Match.match_date <= now,
             Match.match_date >= now - MAX_MATCH_DURATION,
         ).count()
+
+        # Caso 2: partidos marcados "En curso" en la BD sin importar cuándo empezaron
+        # (cubre partidos nocturnos Colombia almacenados con hora local, cuyo match_date
+        # UTC puede estar > 3h atrás aunque el partido todavía esté en juego)
+        in_progress = db.query(Match).filter(
+            Match.status == MatchStatus.IN_PROGRESS.value,
+            Match.match_date <= now + MAX_MATCH_DURATION,  # no futuros lejanos
+        ).count()
+
+        still_active = in_window + in_progress
 
         if still_active > 0:
             next_run = now + timedelta(minutes=FOLLOWUP_MINUTES)

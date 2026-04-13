@@ -138,7 +138,10 @@ def sync_today_scores(session_factory) -> dict:
         yesterday = today - timedelta(days=1)
         tomorrow  = today + timedelta(days=1)
 
-        pending = (
+        # Incluir también partidos marcados "En curso" aunque su match_date esté fuera
+        # de la ventana normal (partidos nocturnos Colombia almacenados en hora local)
+        from app.models.competition.match import MatchStatus as MS
+        pending_window = (
             db.query(Match)
             .options(joinedload(Match.home_team), joinedload(Match.away_team))
             .filter(
@@ -148,6 +151,15 @@ def sync_today_scores(session_factory) -> dict:
             )
             .all()
         )
+        pending_in_progress = (
+            db.query(Match)
+            .options(joinedload(Match.home_team), joinedload(Match.away_team))
+            .filter(Match.status == MS.IN_PROGRESS.value)
+            .all()
+        )
+        # Combinar sin duplicados
+        seen_ids = {m.id for m in pending_window}
+        pending = pending_window + [m for m in pending_in_progress if m.id not in seen_ids]
 
         if not pending:
             logger.debug("[sync] Sin partidos pendientes — no se consume request")
