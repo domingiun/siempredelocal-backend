@@ -131,45 +131,61 @@ def sync_today_scores(session_factory) -> dict:
 
     try:
         # El scheduler solo llama esta función cuando hay partido activo.
-        # Verificación mínima: si no hay nada pendiente hoy/ayer, salir sin API call.
+        # Colombia = UTC-5: partidos nocturnos (≥ 19:00 hora local = ≥ 00:00 UTC del día siguiente)
+        # se guardan con hora local pero api-football los devuelve bajo la fecha UTC siguiente.
+        # Por eso buscamos en una ventana ampliada: ayer → mañana UTC.
         today     = datetime.utcnow().date()
         yesterday = today - timedelta(days=1)
-        has_pending = db.query(Match).filter(
-            Match.status.notin_(list(TERMINAL_STATUSES)),
-            Match.match_date >= datetime.combine(yesterday, datetime.min.time()),
-            Match.match_date <= datetime.combine(today, datetime.max.time()),
-        ).count() > 0
+        tomorrow  = today + timedelta(days=1)
 
-        if not has_pending:
-            logger.debug("[sync] Sin partidos pendientes hoy — no se consume request")
-            return result
-
-        today_str = date.today().isoformat()
-        fixtures  = get_fixtures_by_date(today_str)
-        result["api_called"] = True
-        result["fixtures_fetched"] = len(fixtures)
-
-        if not fixtures:
-            logger.info("[sync] api-football no devolvió fixtures para hoy")
-            return result
-
-        fixture_map = {f["fixture_id"]: f for f in fixtures}
-
-        # Partidos pendientes de hoy con equipos cargados
-        today     = datetime.utcnow().date()
-        yesterday = today - timedelta(days=1)
         pending = (
             db.query(Match)
             .options(joinedload(Match.home_team), joinedload(Match.away_team))
             .filter(
                 Match.status.notin_(list(TERMINAL_STATUSES)),
                 Match.match_date >= datetime.combine(yesterday, datetime.min.time()),
-                Match.match_date <= datetime.combine(today, datetime.max.time()),
+                Match.match_date <= datetime.combine(tomorrow, datetime.max.time()),
             )
             .all()
         )
 
+        if not pending:
+            logger.debug("[sync] Sin partidos pendientes — no se consume request")
+            return result
+
         result["pending_in_db"] = len(pending)
+
+        # Determinar qué fechas UTC necesitamos consultar en api-football.
+        # Un partido guardado como "2026-04-12 20:30" hora Colombia (UTC-5) equivale a
+        # "2026-04-13 01:30" UTC → api-football lo lista bajo 2026-04-13.
+        # Detectamos esto: si match_date.hour >= 19 (hora almacenada local), el fixture
+        # estará en el día siguiente UTC.
+        COLOMBIA_EVENING_HOUR = 19  # a partir de las 7pm local el fixture cae en el día UTC siguiente
+        dates_needed = {today.isoformat()}
+        for m in pending:
+            match_local_date = m.match_date.date() if m.match_date else None
+            if match_local_date:
+                dates_needed.add(match_local_date.isoformat())
+                if m.match_date.hour >= COLOMBIA_EVENING_HOUR:
+                    next_day = match_local_date + timedelta(days=1)
+                    dates_needed.add(next_day.isoformat())
+
+        # Fetchear fixtures para todas las fechas necesarias (máx. 2-3 fechas)
+        all_fixtures: list = []
+        for d_str in sorted(dates_needed):
+            day_fixtures = get_fixtures_by_date(d_str)
+            logger.info(f"[sync] api-football {d_str}: {len(day_fixtures)} fixture(s)")
+            all_fixtures.extend(day_fixtures)
+
+        result["api_called"] = True
+        result["fixtures_fetched"] = len(all_fixtures)
+
+        if not all_fixtures:
+            logger.info("[sync] api-football no devolvió fixtures")
+            return result
+
+        fixture_map = {f["fixture_id"]: f for f in all_fixtures}
+        fixtures = all_fixtures  # alias para find_fixture_for_match
 
         for match in pending:
             fixture = find_fixture_for_match(match, fixture_map, fixtures)
