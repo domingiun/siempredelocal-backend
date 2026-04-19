@@ -134,17 +134,16 @@ class UserUpdate(ProfileUpdate):
 
 class UserCreate(UserBase):
     phone: str = Field(..., min_length=7, max_length=20)
-    password: str = Field(..., min_length=6)
-    
+    password: str = Field(..., min_length=8)
+
     @validator('password')
-    def password_not_empty(cls, v):
+    def password_strength(cls, v):
         if v.strip() == "":
             raise ValueError('La contraseña no puede estar vacía')
-        
-        # Limit to 72 chars for bcrypt (silently truncated by bcrypt anyway)
-        if len(v) > 72:
-            pass
-        
+        if not any(c.isdigit() for c in v):
+            raise ValueError('La contraseña debe contener al menos un número')
+        if not any(c.isalpha() for c in v):
+            raise ValueError('La contraseña debe contener al menos una letra')
         return v
     
     class Config:

@@ -81,18 +81,20 @@ app.add_middleware(SlowAPIMiddleware)
 # Las URLs de avatars/logos apuntan directamente a Supabase Storage (CDN público).
 
 # Configurar CORS
+_production_origins = [
+    "https://siempredelocal.com",
+    "https://www.siempredelocal.com",
+    "https://siempredelocal-frontend.vercel.app",
+]
+_dev_origins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+]
+_allowed_origins = _production_origins + (_dev_origins if os.getenv("DEBUG", "false").lower() == "true" else [])
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "http://192.168.1.16:5173",
-        "http://192.168.1.4:5173",
-        "http://192.168.1.6:5173",
-        "https://siempredelocal.com",
-        "https://www.siempredelocal.com",
-        "https://siempredelocal-frontend.vercel.app"
-    ],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     # M2: Restringir a métodos y headers necesarios — no usar "*"
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],

@@ -20,7 +20,7 @@ _MAGIC_SIGNATURES: dict[str, list[bytes]] = {
     ".png":  [b"\x89PNG\r\n\x1a\n"],
     ".gif":  [b"GIF87a", b"GIF89a"],
     ".webp": [b"RIFF"],          # RIFF....WEBP — verificamos los 4 bytes adicionales
-    ".svg":  [b"<svg", b"<?xml", b"<SVG"],  # SVG es texto XML
+    # SVG eliminado: puede contener <script> tags → XSS almacenado si el CDN sirve con image/svg+xml
 }
 
 ALLOWED_EXTENSIONS = frozenset(_MAGIC_SIGNATURES.keys())
