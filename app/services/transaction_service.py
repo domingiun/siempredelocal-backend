@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
-from sqlalchemy import exc
+from sqlalchemy import exc, func
 from sqlalchemy import text
 from app.models.bet.transaction import Transaction, TransactionType, TransactionStatus
 from app.models.bet.UserWallet import UserWallet
@@ -100,26 +100,33 @@ class TransactionService:
         
         # Actualizar wallet si es necesario
         if update_wallet:
-            wallet = session.query(UserWallet).get(transaction.wallet_id)
+            wallet = (
+                session.query(UserWallet)
+                .filter_by(id=transaction.wallet_id)
+                .with_for_update()
+                .first()
+            )
             if not wallet:
                 raise ValueError(f"Wallet {transaction.wallet_id} no encontrada")
-            
+
             # Aplicar transacción según tipo
             if transaction.transaction_type == TransactionType.CREDIT_PURCHASE:
                 wallet.credits += transaction.amount_credits
                 wallet.total_credits_purchased += transaction.amount_credits
-                
+
             elif transaction.transaction_type == TransactionType.BET_PLACEMENT:
                 if wallet.credits < transaction.amount_credits:
                     raise ValueError("Créditos insuficientes")
                 wallet.credits -= transaction.amount_credits
-                
+
             elif transaction.transaction_type == TransactionType.PRIZE_WIN:
                 # Premios se cargan como puntos disponibles (balance_cop)
                 wallet.balance_cop += transaction.amount_cop
                 wallet.total_prizes_won += transaction.amount_cop
-                
+
             elif transaction.transaction_type == TransactionType.CREDIT_CONVERSION:
+                if wallet.credits < transaction.amount_credits:
+                    raise ValueError("Créditos insuficientes para completar la conversión")
                 wallet.credits -= transaction.amount_credits
                 wallet.balance_cop += transaction.amount_cop
                 
@@ -267,13 +274,26 @@ class TransactionService:
         CONVERSION_RATE = 4500  # COP por crédito
         WITHDRAWAL_FEE_PERCENT = 5
 
-        # Obtener wallet
-        wallet = session.query(UserWallet).filter_by(user_id=user_id).first()
+        # Obtener wallet con bloqueo para evitar race conditions
+        wallet = (
+            session.query(UserWallet)
+            .filter_by(user_id=user_id)
+            .with_for_update()
+            .first()
+        )
         if not wallet:
             raise ValueError("Wallet no encontrada")
 
-        if credits_to_convert > wallet.credits:
-            raise ValueError("Créditos insuficientes")
+        # Contar créditos ya comprometidos en conversiones pendientes
+        pending_credits = session.query(func.coalesce(func.sum(Transaction.amount_credits), 0)).filter(
+            Transaction.user_id == user_id,
+            Transaction.transaction_type == TransactionType.CREDIT_CONVERSION,
+            Transaction.status == TransactionStatus.PENDING,
+        ).scalar()
+        available_credits = wallet.credits - pending_credits
+
+        if credits_to_convert > available_credits:
+            raise ValueError("Créditos insuficientes (tienes solicitudes de conversión pendientes)")
 
         # Cálculos
         gross_amount = credits_to_convert * CONVERSION_RATE
