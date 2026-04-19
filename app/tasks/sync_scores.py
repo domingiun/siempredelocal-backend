@@ -27,7 +27,7 @@ from app.services.competition_sync_service import sync_after_match_update
 
 logger = logging.getLogger(__name__)
 
-TERMINAL_STATUSES = {MatchStatus.FINISHED.value, MatchStatus.CANCELLED.value}
+TERMINAL_STATUSES = {MatchStatus.FINISHED.value, MatchStatus.CANCELLED.value, MatchStatus.POSTPONED.value}
 
 
 # ── Normalización de nombres ───────────────────────────────────────────────
@@ -130,16 +130,14 @@ def sync_today_scores(session_factory) -> dict:
     }
 
     try:
-        # El scheduler solo llama esta función cuando hay partido activo.
         # Colombia = UTC-5: partidos nocturnos (≥ 19:00 hora local = ≥ 00:00 UTC del día siguiente)
         # se guardan con hora local pero api-football los devuelve bajo la fecha UTC siguiente.
-        # Por eso buscamos en una ventana ampliada: ayer → mañana UTC.
-        today     = datetime.utcnow().date()
+        now       = datetime.utcnow()
+        today     = now.date()
         yesterday = today - timedelta(days=1)
-        tomorrow  = today + timedelta(days=1)
 
-        # Incluir también partidos marcados "En curso" aunque su match_date esté fuera
-        # de la ventana normal (partidos nocturnos Colombia almacenados en hora local)
+        # Solo partidos que ya han empezado (o están a punto de empezar en los próximos 5 min).
+        # NO incluir partidos futuros (mañana, etc.) — el scheduler los disparará a su hora.
         from app.models.competition.match import MatchStatus as MS
         pending_window = (
             db.query(Match)
@@ -147,7 +145,7 @@ def sync_today_scores(session_factory) -> dict:
             .filter(
                 Match.status.notin_(list(TERMINAL_STATUSES)),
                 Match.match_date >= datetime.combine(yesterday, datetime.min.time()),
-                Match.match_date <= datetime.combine(tomorrow, datetime.max.time()),
+                Match.match_date <= now + timedelta(minutes=5),
             )
             .all()
         )
@@ -162,7 +160,7 @@ def sync_today_scores(session_factory) -> dict:
         pending = pending_window + [m for m in pending_in_progress if m.id not in seen_ids]
 
         if not pending:
-            logger.debug("[sync] Sin partidos pendientes — no se consume request")
+            logger.debug("[sync] Sin partidos activos — no se consume request")
             return result
 
         result["pending_in_db"] = len(pending)
@@ -173,7 +171,7 @@ def sync_today_scores(session_factory) -> dict:
         # Detectamos esto: si match_date.hour >= 19 (hora almacenada local), el fixture
         # estará en el día siguiente UTC.
         COLOMBIA_EVENING_HOUR = 19  # a partir de las 7pm local el fixture cae en el día UTC siguiente
-        dates_needed = {today.isoformat()}
+        dates_needed = set()
         for m in pending:
             match_local_date = m.match_date.date() if m.match_date else None
             if match_local_date:

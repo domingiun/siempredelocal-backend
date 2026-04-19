@@ -18,6 +18,7 @@ BASE_URL = "https://v3.football.api-sports.io"
 # IDs de ligas que manejamos en la plataforma
 TRACKED_LEAGUES = {
     1,    # FIFA World Cup
+    2,    # UEFA Champions League
     39,   # Premier League (England)
     71,   # Brasileirao Serie A (Brazil)
     78,   # Bundesliga (Germany)
