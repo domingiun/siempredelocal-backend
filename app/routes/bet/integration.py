@@ -1,11 +1,14 @@
 # backend/app/routes/bet/integration.py
 import logging
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 from sqlalchemy import text, func
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
-from typing import List, Optional
+limiter = Limiter(key_func=get_remote_address)
 from datetime import timedelta
 from app.db import get_db
 from app.core.security import get_current_user
@@ -135,7 +138,9 @@ def create_betdate(
 
 
 @router.post("/place-bet", response_model=PlaceBetResponse)
+@limiter.limit("10/minute")
 def place_bet(
+    http_request: Request,
     request: PlaceBetRequest,
     session: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)

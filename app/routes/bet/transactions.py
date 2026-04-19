@@ -1,12 +1,15 @@
 # backend/app/routes/bet/transactions.py
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Body
-
-logger = logging.getLogger(__name__)
+from fastapi import APIRouter, Depends, HTTPException, Body, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.db import get_db
+
+logger = logging.getLogger(__name__)
+limiter = Limiter(key_func=get_remote_address)
 from app.services.transaction_service import TransactionService
 from app.schemas.bet.transactions import (
     PurchaseCreditsRequest, PurchaseCreditsResponse, ConvertCreditsRequest,
@@ -34,7 +37,9 @@ class AdminCreditAdjustmentRequest(BaseModel):
 
 
 @router.post("/purchase-credits", response_model=PurchaseCreditsResponse)
+@limiter.limit("5/minute")
 def purchase_credits(
+    http_request: Request,
     request: PurchaseCreditsRequest,
     session: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -71,7 +76,9 @@ def purchase_credits(
 
 
 @router.post("/convert-to-cash", response_model=ConvertCreditsResponse)
+@limiter.limit("5/minute")
 def convert_credits_to_cash(
+    http_request: Request,
     request: ConvertCreditsRequest,
     session: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
