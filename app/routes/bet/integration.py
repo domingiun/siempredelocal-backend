@@ -1,8 +1,10 @@
 # backend/app/routes/bet/integration.py
+import logging
 from fastapi import APIRouter, Depends, HTTPException
-import traceback
 from sqlalchemy.orm import Session
 from sqlalchemy import text, func
+
+logger = logging.getLogger(__name__)
 from typing import List, Optional
 from datetime import timedelta
 from app.db import get_db
@@ -78,12 +80,10 @@ def get_available_matches(
         )
         
     except Exception as e:
+        logger.error(f"get_available_matches failed: {e}", exc_info=True)
         raise HTTPException(
-            status_code=400, 
-            detail={
-                "error": "No se pudieron obtener los partidos disponibles",
-                "details": str(e)
-            }
+            status_code=500,
+            detail="No se pudieron obtener los partidos disponibles"
         )
 
 
@@ -130,10 +130,8 @@ def create_betdate(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         session.rollback()
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Error interno al crear fecha: {str(e)}"
-        )
+        logger.error(f"create_betdate failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno al crear fecha de pronósticos")
 
 
 @router.post("/place-bet", response_model=PlaceBetResponse)
@@ -280,16 +278,8 @@ def place_bet(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         session.rollback()
-        print("❌ Error interno en place_bet:")
-        traceback.print_exc()
-        raise HTTPException(
-            status_code=500, 
-            detail={
-                "error": "Error interno al procesar la apuesta",
-                "details": str(e),
-                "traceback": traceback.format_exc()
-            }
-        )
+        logger.error(f"place_bet failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno al procesar la apuesta")
 
 @router.get("/betdate/{bet_date_id}", response_model=BetDateWithMatches)
 def get_betdate_with_matches(

@@ -1,5 +1,8 @@
 # backend/app/routes/bet/finalize.py
+import logging
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+
+logger = logging.getLogger(__name__)
 from sqlalchemy.orm import Session
 from typing import Optional, Dict, Any
 from app.db import get_db
@@ -238,7 +241,8 @@ def finalize_betdate(
         
     except Exception as e:
         session.rollback()
-        raise HTTPException(status_code=500, detail=f"Error al finalizar fecha: {str(e)}")
+        logger.error(f"finalize_betdate failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno al finalizar la fecha")
 
 
 @router.post("/close/{bet_date_id}", response_model=CloseBetDateResponse)

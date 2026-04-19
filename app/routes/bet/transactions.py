@@ -1,5 +1,8 @@
 # backend/app/routes/bet/transactions.py
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Body
+
+logger = logging.getLogger(__name__)
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -63,7 +66,8 @@ def purchase_credits(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         session.rollback()
-        raise HTTPException(status_code=500, detail=f"Error en la recarga: {str(e)}")
+        logger.error(f"purchase_credits failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno al procesar la recarga")
 
 
 @router.post("/convert-to-cash", response_model=ConvertCreditsResponse)
@@ -99,7 +103,8 @@ def convert_credits_to_cash(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         session.rollback()
-        raise HTTPException(status_code=500, detail=f"Error en la conversión: {str(e)}")
+        logger.error(f"convert_credits_to_cash failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno al procesar la conversión")
 
 
 @router.post("/request/points-to-credits")
@@ -299,7 +304,8 @@ def get_transaction_history(
         )
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al obtener historial: {str(e)}")
+        logger.error(f"get_transaction_history failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno al obtener el historial")
 
 
 @router.get("/plans")

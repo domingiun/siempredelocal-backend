@@ -380,8 +380,8 @@ def generate_schedule(
     
     except Exception as e:
         db.rollback()
-        logger.error(f"Error generando calendario: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error generando calendario: {str(e)}")
+        logger.error(f"generate_calendar failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno al generar el calendario")
 
 # -----------------------------
 # GET TEMPLATES

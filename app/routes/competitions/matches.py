@@ -607,10 +607,10 @@ def create_match(
         
     except Exception as e:
         db.rollback()
-        print(f"❌ Error creando partido: {str(e)}")
+        logger.error(f"create_match failed: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error interno: {str(e)}"
+            detail="Error interno al crear el partido"
         )
 
 # -----------------------------
@@ -1082,13 +1082,8 @@ def get_available_teams_for_competition(
         }
         
     except Exception as e:
-        print(f"❌ Error en get_available_teams_for_competition: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error interno: {str(e)}"
-        )
+        logger.error(f"get_available_teams_for_competition failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno al obtener equipos disponibles")
 
 @router.get(
     "/competitions/{competition_id}/rounds/{round_number}/matches",
