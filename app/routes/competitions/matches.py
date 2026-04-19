@@ -123,10 +123,10 @@ def _update_competition_stats(
             away_stats.points += 1
         
         db.commit()
-        print(f"✅ Estadísticas actualizadas: {home_stats.team_id} vs {away_stats.team_id}")
-        
+        logger.debug("stats updated: team %s vs %s", home_stats.team_id, away_stats.team_id)
+
     except Exception as e:
-        print(f"❌ Error actualizando estadísticas: {str(e)}")
+        logger.error("update_match_stats failed: %s", e, exc_info=True)
         raise
 
 def _revert_match_stats(
@@ -445,14 +445,6 @@ def create_match(
 ):
     """Crear nuevo partido simplificado"""
     try:
-        # ✅ DIAGNÓSTICO: Ver qué datos llegan
-        print("=" * 50)
-        print("📥 DATOS RECIBIDOS EN CREATE_MATCH:")
-        print(f"Status: {match_data.status} (tipo: {type(match_data.status)})")
-        print(f"Home score: {match_data.home_score} (tipo: {type(match_data.home_score)})")
-        print(f"Away score: {match_data.away_score} (tipo: {type(match_data.away_score)})")
-        print(f"Todo el dict: {match_data.dict()}")
-        print("=" * 50)
         # 1. Validar competencia
         competition = db.query(Competition).filter(
             Competition.id == match_data.competition_id,
@@ -543,9 +535,7 @@ def create_match(
         sync_after_match_update(match_obj, db)
         recalculate_competition_standings(match_obj.competition_id, db)
         
-        print(f"✅ Partido creado ID {match_obj.id}: "
-              f"{home_team.name} {match_obj.home_score}-{match_obj.away_score} {away_team.name} | "
-              f"Status: {match_obj.status}")
+        logger.info("match created id=%s status=%s", match_obj.id, match_obj.status)
             
         # 8. Cargar relaciones para la respuesta
         match_with_relations = db.query(Match).options(
@@ -555,12 +545,6 @@ def create_match(
             joinedload(Match.competition)
         ).filter(Match.id == match_obj.id).first()
         
-        # 9. Log
-        print(
-            f"✅ Partido creado: {home_team.name} vs {away_team.name} | "
-            f"Jornada: {round_obj.name} | "
-            f"Usuario: {current_user.username}"
-        )
         
         # 10. CONSTRUIR RESPUESTA MANUALMENTE
         response_data = {
@@ -636,8 +620,6 @@ def update_match(
     # 2. OBTENER DATOS DE ACTUALIZACIÓN
     update_data = match_data.dict(exclude_unset=True, exclude_none=True)
     
-    print(f"🔄 Datos recibidos para actualización: {update_data}")
-    
     # 3. VALIDACIÓN CRÍTICA: SI SE MARCA COMO FINALIZADO, DEBE TENER MARCADOR
     if update_data.get('status') == MatchStatus.FINISHED.value:
         # Si NO viene marcador en la actualización
@@ -650,7 +632,7 @@ def update_match(
                 )
             # Si el partido actual SÍ tiene marcador, mantenerlo
             else:
-                print("⚠️ Marcando como FINALIZADO sin nuevo marcador, manteniendo el existente")
+                pass  # mantener marcador existente
         # Si viene marcador, asegurarse de que sean números válidos
         else:
             if update_data['home_score'] is None or update_data['away_score'] is None:
@@ -663,7 +645,6 @@ def update_match(
     if update_data.get('status') == MatchStatus.SCHEDULED.value:
         update_data['home_score'] = 0
         update_data['away_score'] = 0
-        print("📝 Estado PROGRAMADO - Marcador forzado a 0-0")
     
     # 5. SI SE CAMBIA DE FINALIZADO A OTRO ESTADO, MANTENER MARCADOR
     elif original_status == MatchStatus.FINISHED.value and update_data.get('status') != MatchStatus.FINISHED.value:
@@ -671,7 +652,6 @@ def update_match(
             update_data['home_score'] = match_obj.home_score
         if 'away_score' not in update_data:
             update_data['away_score'] = match_obj.away_score
-        print(f"📝 Cambiando de FINALIZADO a {update_data.get('status')} - Manteniendo marcador {match_obj.home_score}-{match_obj.away_score}")
     
     # 6. VERIFICAR SI ES UNA COMPETENCIA MUNDIAL (estadio fijo)
     competition = db.query(Competition).filter(
@@ -688,7 +668,6 @@ def update_match(
             # Actualizar estadio y ciudad del equipo local
             update_data['stadium'] = new_home_team.stadium
             update_data['city'] = new_home_team.city
-            print(f"🏟️ Estadio actualizado a {new_home_team.stadium} por cambio de equipo local")
     
     # 8. SI ES MUNDIAL Y NO HAY ESTADIO ESPECIFICADO, MANTENER EL ACTUAL
     elif is_world_cup and 'stadium' not in update_data:
@@ -703,10 +682,10 @@ def update_match(
     # 10. GUARDAR Y RECALCULAR
     db.commit()
     
-    # LOG DE CAMBIOS
-    print(f"📝 Partido {match_id} modificado por {current_user.username} | "
-          f"Estado: {original_status} → {match_obj.status} | "
-          f"Marcador: {original_home_score}-{original_away_score} → {match_obj.home_score}-{match_obj.away_score}")
+    logger.info("match %s updated: %s→%s score %s-%s→%s-%s",
+                match_id, original_status, match_obj.status,
+                original_home_score, original_away_score,
+                match_obj.home_score, match_obj.away_score)
     
     # 11. SINCRONIZAR Y RECALCULAR
     sync_after_match_update(match_obj, db)
@@ -979,7 +958,6 @@ def get_available_teams_for_competition(
 ):
     """Obtener equipos disponibles para una competencia"""
     try:
-        print(f"🔍 Buscando equipos para competencia {competition_id}")
         
         # 1. Obtener información de la competencia
         competition = db.query(Competition).filter(
@@ -990,22 +968,19 @@ def get_available_teams_for_competition(
         if not competition:
             raise HTTPException(status_code=404, detail="Competencia no encontrada")
         
-        print(f"🏆 Competencia: {competition.name}")
-        
         # 2. Obtener IDs de equipos que YA están en esta competencia (solo para info)
         existing_team_ids = []
         competition_teams = db.query(CompetitionTeam).filter(
             CompetitionTeam.competition_id == competition_id
         ).all()
-        
+
         if competition_teams:
             existing_team_ids = [ct.team_id for ct in competition_teams]
-            print(f"📊 Equipos ya en competencia: {len(existing_team_ids)}")
-        
+
         # 3. Determinar país basado en el nombre de la competencia
         competition_name = competition.name.lower()
         competition_country = None
-        
+
         # Mapeo simple
         if any(keyword in competition_name for keyword in ['colombia', 'colombiano', 'liga betplay', 'dimayor']):
             competition_country = 'colombia'
@@ -1013,12 +988,9 @@ def get_available_teams_for_competition(
             competition_country = 'argentina'
         elif any(keyword in competition_name for keyword in ['españa', 'español', 'la liga']):
             competition_country = 'españa'
-        
-        print(f"📍 País detectado: {competition_country}")
-        
+
         # 4. Consultar TODOS los equipos activos
         all_teams = db.query(Team).filter(Team.is_active == True).all()
-        print(f"👥 Total equipos activos en BD: {len(all_teams)}")
         
         # 5. Filtrar equipos por país (PERO NO excluir los ya en competencia)
         available_teams = []
@@ -1049,7 +1021,6 @@ def get_available_teams_for_competition(
             
             available_teams.append(team)
         
-        print(f"✅ Equipos disponibles después de filtros: {len(available_teams)}")
         
         # 6. Ordenar alfabéticamente
         available_teams.sort(key=lambda x: x.name.lower())

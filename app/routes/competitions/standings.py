@@ -29,8 +29,6 @@ def get_standings(
     recalculate: bool = Query(False),
     db: Session = Depends(get_db)
 ):
-    print(f"📥 BACKEND → get_standings | competition_id={competition_id}")
-
     competition = db.query(Competition).filter(
         Competition.id == competition_id,
         Competition.is_active == True
@@ -54,17 +52,6 @@ def get_standings(
         CompetitionTeam.goals_against.asc(),  # Menos goles en contra es mejor
         Team.name.asc()  # Último desempate alfabético
     ).all()
-    print(f"📊 BACKEND → CompetitionTeam encontrados: {len(standings_query)}")
-
-    if standings_query:
-        s = standings_query[0]
-        print("🔍 PRIMER CompetitionTeam:")
-        print("   team_id:", s.team_id)
-        print("   team obj:", s.team)
-        if s.team:
-            print("   team.name:", s.team.name)
-            print("   team.logo_url:", s.team.logo_url)
-
     enriched_standings = []
     for s in standings_query:
         # Construir manualmente los datos para debug
@@ -96,10 +83,6 @@ def get_standings(
             standing_data["team_logo"] = None
         
         enriched_standings.append(standing_data)
-       
-        print("📤 BACKEND → standing final (primer item):")
-    if enriched_standings:
-        print(enriched_standings[0])
 
     return enriched_standings
 

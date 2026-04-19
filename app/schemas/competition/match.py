@@ -50,7 +50,6 @@ class MatchCreate(MatchBase):
                 # Si no está en el mapa, usar el valor original (capitalizado)
                 return v.capitalize()
             
-            print(f"✅ Validando status en CREATE: '{v}' -> '{result}'")
             return result
         
         return v
@@ -134,7 +133,6 @@ class MatchUpdate(BaseModel):
             }
 
             result = status_map.get(v_lower)
-            print(f"🔄 Validando status: '{v}' -> '{result}'")
             return result
 
         return v

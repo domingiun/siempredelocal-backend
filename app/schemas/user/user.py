@@ -141,9 +141,9 @@ class UserCreate(UserBase):
         if v.strip() == "":
             raise ValueError('La contraseña no puede estar vacía')
         
-        # ✅ Limitar a 72 caracteres para bcrypt
+        # Limit to 72 chars for bcrypt (silently truncated by bcrypt anyway)
         if len(v) > 72:
-            print(f"⚠️  Advertencia: Contraseña de {len(v)} caracteres será truncada a 72")
+            pass
         
         return v
     

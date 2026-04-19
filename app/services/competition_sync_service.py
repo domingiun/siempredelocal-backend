@@ -15,7 +15,6 @@ def sync_after_match_update(match: Match, db: Session):
     # 1. Recalcular tabla de posiciones si el partido está finalizado
     if match.status == MatchStatus.FINISHED.value:
         recalculate_competition_standings(competition_id, db)
-        print(f"✅ Tabla recalculada para competencia {competition_id}")
     
     # 2. Verificar si la jornada está completa
     round_matches = db.query(Match).filter(
@@ -35,12 +34,10 @@ def sync_after_match_update(match: Match, db: Session):
             if not round_obj.is_completed:
                 round_obj.is_completed = True
                 round_obj.completed_at = datetime.now()
-                print(f"✅ Jornada {round_obj.name} marcada como completada")
         else:
             if round_obj.is_completed:
                 round_obj.is_completed = False
                 round_obj.completed_at = None
-                print(f"⚠️  Jornada {round_obj.name} marcada como incompleta")
         
         db.commit()
     
@@ -59,11 +56,8 @@ def sync_after_match_update(match: Match, db: Session):
             if competition.status != CompetitionStatus.COMPLETED:
                 competition.status = CompetitionStatus.COMPLETED
                 competition.end_date = datetime.now()
-                print(f"🏆 Competencia {competition.name} marcada como completada")
         elif competition.status == CompetitionStatus.COMPLETED:
-            # Si estaba completada pero ahora no, cambiar a EN CURSO
             competition.status = CompetitionStatus.ONGOING
-            print(f"🔄 Competencia {competition.name} cambiada a EN CURSO")
         
         db.commit()
     

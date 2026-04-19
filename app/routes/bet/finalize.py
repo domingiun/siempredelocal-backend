@@ -535,15 +535,11 @@ def send_finalization_notifications(
     # Esto se ejecuta en background y no bloquea la respuesta
     
     # Ejemplo de implementación básica:
-    print(f"[BACKGROUND] Enviando notificaciones para fecha {betdate_id}")
+    logger.info(f"[BACKGROUND] Enviando notificaciones para fecha {betdate_id}")
     if has_winner and winner_info:
         if isinstance(winner_info, list):
-            winners_text = ", ".join(
-                [f"{w.get('username')} (${w.get('prize_amount', 0)})" for w in winner_info]
-            )
-            print(f"[BACKGROUND] ¡EMPATE! Ganadores: {winners_text}")
+            logger.info(f"[BACKGROUND] Empate — {len(winner_info)} ganador(es) en fecha {betdate_id}")
         else:
-            print(f"[BACKGROUND] ¡GANADOR! {winner_info['username']} ganó ${winner_info.get('prize_amount', 0)}")
-    
+            logger.info(f"[BACKGROUND] Ganador en fecha {betdate_id}")
     if top_10_ranking:
-        print(f"[BACKGROUND] Top 3: {[(r['username'], r['points']) for r in top_10_ranking[:3]]}")
+        logger.info(f"[BACKGROUND] Fecha {betdate_id} finalizada — {len(top_10_ranking)} participantes")

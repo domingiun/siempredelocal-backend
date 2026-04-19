@@ -196,7 +196,7 @@ def place_bet(
             )
             session.add(wallet)
             session.flush()
-        print(f"wallet credits: {wallet.credits}")
+        logger.debug("wallet credits checked for user %s", user_id)
         
         # Validar que sean exactamente 1 crédito
         if betdate.required_credits != 1:
@@ -255,7 +255,7 @@ def place_bet(
         
         # 9. Commit todas las transacciones
         session.commit()
-        print("=== place_bet OK ===")
+        logger.info("place_bet OK — bet_id=%s user_id=%s", bet.id, user_id)
         
         # 10. Preparar detalles adicionales
         bet_details = {

@@ -628,53 +628,12 @@ async def add_teams_debug(
 ):
     """Endpoint para diagnosticar problemas"""
     
-    print("=" * 60)
-    print("🔍 DEBUG ENDPOINT - DETALLADO")
-    print(f"🔍 Competition ID: {competition_id}")
-    print(f"🔍 Usuario: {current_user.username}")
-    print(f"🔍 Método: {request.method}")
-    
-    # Leer el body crudo
     body_bytes = await request.body()
     body_str = body_bytes.decode('utf-8') if body_bytes else ""
-    
-    print(f"🔍 Body crudo (longitud: {len(body_str)}): '{body_str}'")
-    print(f"🔍 Content-Type header: {request.headers.get('content-type')}")
-    
-    # Verificar si es preflight OPTIONS
-    if request.method == "OPTIONS":
-        print("🔍 Esto es una preflight OPTIONS request")
-        return {"message": "CORS preflight"}
-    
-    try:
-        if body_str:
-            import json
-            body_json = json.loads(body_str)
-            print(f"🔍 JSON parseado: {body_json}")
-            print(f"🔍 Tipo: {type(body_json)}")
-            
-            if 'team_ids' in body_json:
-                team_ids = body_json['team_ids']
-                print(f"🔍 team_ids: {team_ids}")
-                print(f"🔍 Tipo team_ids: {type(team_ids)}")
-                
-                # Validar cada elemento
-                for i, tid in enumerate(team_ids):
-                    print(f"🔍   [{i}] = {tid} (tipo: {type(tid)})")
-        else:
-            print("🔍 Body vacío o None")
-            
-    except json.JSONDecodeError as e:
-        print(f"🔍 Error parseando JSON: {str(e)}")
-        print(f"🔍 Body que causó error: '{body_str}'")
-    except Exception as e:
-        print(f"🔍 Error general: {str(e)}")
-    
-    print("=" * 60)
+    logger.debug(f"debug_endpoint competition={competition_id} body_length={len(body_str)}")
     return {
         "status": "debug",
         "body_received": body_str,
         "body_length": len(body_str),
         "competition_id": competition_id,
-        "headers": dict(request.headers)
     }
