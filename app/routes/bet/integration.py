@@ -536,3 +536,75 @@ def get_user_betting_status(
         active_betdates=active_betdates
     )
 
+
+@router.get("/betdate/{betdate_id}/community")
+def get_community_predictions(
+    betdate_id: int,
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Pronósticos de todos los participantes de una fecha.
+    Solo disponible cuando la fecha está cerrada o finalizada (no abierta).
+    """
+    betdate = session.query(BetDate).filter(BetDate.id == betdate_id).first()
+    if not betdate:
+        raise HTTPException(status_code=404, detail="Fecha no encontrada")
+
+    if betdate.status == "open":
+        raise HTTPException(
+            status_code=403,
+            detail="Los pronósticos de otros participantes solo son visibles después de que la fecha cierra"
+        )
+
+    bets = (
+        session.query(Bet)
+        .filter(Bet.bet_date_id == betdate_id)
+        .all()
+    )
+
+    participants = []
+    for bet in bets:
+        user = session.query(User).filter(User.id == bet.user_id).first()
+        predictions = []
+        for pred in bet.predictions:
+            match = pred.match
+            if not match:
+                continue
+            home_name = match.home_team.name if match.home_team else f"Equipo {match.home_team_id}"
+            away_name = match.away_team.name if match.away_team else f"Equipo {match.away_team_id}"
+            home_logo = match.home_team.logo_url if match.home_team else None
+            away_logo = match.away_team.logo_url if match.away_team else None
+            predictions.append({
+                "match_id": pred.match_id,
+                "home_team": home_name,
+                "away_team": away_name,
+                "home_logo": home_logo,
+                "away_logo": away_logo,
+                "predicted_home": pred.predicted_home_score,
+                "predicted_away": pred.predicted_away_score,
+                "actual_home": match.home_score,
+                "actual_away": match.away_score,
+                "match_status": match.status,
+                "points": pred.points,
+            })
+        participants.append({
+            "bet_id": bet.id,
+            "user_id": bet.user_id,
+            "username": user.username if user else f"Usuario {bet.user_id}",
+            "avatar_url": user.avatar_url if user else None,
+            "total_points": bet.points or 0,
+            "rank": bet.rank,
+            "predictions": predictions,
+        })
+
+    participants.sort(key=lambda x: x["total_points"], reverse=True)
+
+    return {
+        "betdate_id": betdate_id,
+        "betdate_name": betdate.name,
+        "betdate_status": betdate.status,
+        "total_participants": len(participants),
+        "participants": participants,
+    }
+
