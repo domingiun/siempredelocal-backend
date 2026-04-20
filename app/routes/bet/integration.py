@@ -608,3 +608,60 @@ def get_community_predictions(
         "participants": participants,
     }
 
+
+
+@router.get("/me/bets")
+def get_my_bets_enriched(
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Devuelve todas las apuestas del usuario con match y betdate ya incluidos.
+    Reemplaza N+1 requests de /bets/user/{id} + /matches/{id} + /betdate/{id}.
+    """
+    bets = session.query(Bet).filter_by(user_id=current_user.id).all()
+
+    result = []
+    for bet in bets:
+        betdate = bet.bet_date
+        predictions = []
+        for pred in bet.predictions:
+            match = pred.match
+            if not match:
+                continue
+            home_team = match.home_team
+            away_team = match.away_team
+            competition = match.competition
+            predictions.append({
+                "id": pred.id,
+                "match_id": pred.match_id,
+                "predicted_home_score": pred.predicted_home_score,
+                "predicted_away_score": pred.predicted_away_score,
+                "points": pred.points,
+                "match": {
+                    "id": match.id,
+                    "status": match.status,
+                    "match_date": match.match_date.isoformat() if match.match_date else None,
+                    "home_score": match.home_score,
+                    "away_score": match.away_score,
+                    "stadium": match.stadium,
+                    "home_team": home_team.name if home_team else None,
+                    "away_team": away_team.name if away_team else None,
+                    "home_team_logo": home_team.logo_url if home_team else None,
+                    "away_team_logo": away_team.logo_url if away_team else None,
+                    "competition": competition.name if competition else None,
+                },
+            })
+        result.append({
+            "id": bet.id,
+            "bet_date_id": bet.bet_date_id,
+            "bet_date_name": betdate.name if betdate else f"Fecha #{bet.bet_date_id}",
+            "bet_date_status": betdate.status if betdate else None,
+            "submitted_at": bet.submitted_at.isoformat() if bet.submitted_at else None,
+            "points": bet.points or 0,
+            "rank": bet.rank,
+            "predictions": predictions,
+        })
+
+    result.sort(key=lambda x: x["bet_date_id"], reverse=True)
+    return result
