@@ -39,8 +39,8 @@ class AdminCreditAdjustmentRequest(BaseModel):
 @router.post("/purchase-credits", response_model=PurchaseCreditsResponse)
 @limiter.limit("5/minute")
 def purchase_credits(
-    http_request: Request,
-    request: PurchaseCreditsRequest,
+    request: Request,
+    body: PurchaseCreditsRequest,
     session: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -51,9 +51,9 @@ def purchase_credits(
         result = TransactionService.purchase_credits(
             session=session,
             user_id=current_user.id,
-            plan_id=request.plan_id,
-            payment_method=request.payment_method,
-            payment_reference=request.payment_reference
+            plan_id=body.plan_id,
+            payment_method=body.payment_method,
+            payment_reference=body.payment_reference
         )
         
         return PurchaseCreditsResponse(
@@ -78,8 +78,8 @@ def purchase_credits(
 @router.post("/convert-to-cash", response_model=ConvertCreditsResponse)
 @limiter.limit("5/minute")
 def convert_credits_to_cash(
-    http_request: Request,
-    request: ConvertCreditsRequest,
+    request: Request,
+    body: ConvertCreditsRequest,
     session: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -91,7 +91,7 @@ def convert_credits_to_cash(
         result = TransactionService.convert_credits_to_cash(
             session=session,
             user_id=current_user.id,
-            credits_to_convert=request.credits_to_convert
+            credits_to_convert=body.credits_to_convert
         )
         
         return ConvertCreditsResponse(
