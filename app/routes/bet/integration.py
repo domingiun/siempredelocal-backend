@@ -140,8 +140,8 @@ def create_betdate(
 @router.post("/place-bet", response_model=PlaceBetResponse)
 @limiter.limit("10/minute")
 def place_bet(
-    http_request: Request,
-    request: PlaceBetRequest,
+    request: Request,
+    body: PlaceBetRequest,
     session: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -154,10 +154,10 @@ def place_bet(
     user_id = current_user.id
     try:
         # 1. Verificar que la fecha de pronósticos exista y esté abierta
-        betdate = session.query(BetDate).get(request.bet_date_id)
+        betdate = session.query(BetDate).get(body.bet_date_id)
         if not betdate:
             raise ValueError("Fecha de pronósticos no encontrada")
-        
+
         # Verificar estado y fecha de cierre real (recalcular por seguridad)
         if BetService.update_betdate_status(session, betdate):
             session.commit()
@@ -177,7 +177,7 @@ def place_bet(
             betdate.close_datetime = close_dt
             session.commit()
             raise ValueError("Las pronósticos para esta fecha ya cerraron")
-        
+
         # 2. Verificar créditos — SELECT FOR UPDATE bloquea la fila durante la transacción
         #    para evitar race condition de doble gasto (C4)
         wallet = (
@@ -197,41 +197,41 @@ def place_bet(
             session.add(wallet)
             session.flush()
         logger.debug("wallet credits checked for user %s", user_id)
-        
+
         # Validar que sean exactamente 1 crédito
         if betdate.required_credits != 1:
             raise ValueError("Error de configuración: Se requieren exactamente 1 crédito por pronóstico")
-        
+
         if wallet.credits < betdate.required_credits:
             raise ValueError(f"Créditos insuficientes. Necesitas {betdate.required_credits}, tienes {wallet.credits}")
-        
+
         # 3. Validar predicciones
-        if len(request.predictions) != 10:
+        if len(body.predictions) != 10:
             raise ValueError("Debe hacer exactamente 10 predicciones")
-        
+
         # Verificar que todos los partidos sean de esta fecha
         betdate_match_ids = [m.id for m in betdate.matches]
-        for pred in request.predictions:
+        for pred in body.predictions:
             if pred.match_id not in betdate_match_ids:
                 match_info = session.query(Match).get(pred.match_id)
                 if match_info:
                     raise ValueError(f"El partido {match_info.home_team.name} vs {match_info.away_team.name} no pertenece a esta fecha")
                 else:
                     raise ValueError(f"El partido ID {pred.match_id} no existe")
-        
+
         # 5. Crear la apuesta
         bet = Bet(
             user_id=user_id,
-            bet_date_id=request.bet_date_id,
+            bet_date_id=body.bet_date_id,
             is_finalized=False,
             points=0
         )
-        
+
         session.add(bet)
         session.flush()  # Para obtener el ID
-        
+
         # 6. Crear predicciones
-        for pred in request.predictions:
+        for pred in body.predictions:
             bet_pred = BetPrediction(
                 bet_id=bet.id,
                 match_id=pred.match_id,
@@ -240,45 +240,45 @@ def place_bet(
                 points=0
             )
             session.add(bet_pred)
-        
+
         # 7. Registrar transacción de apuesta
         transaction_result = TransactionService.place_bet_transaction(
             session=session,
             user_id=user_id,
             bet_id=bet.id,
-            bet_date_id=request.bet_date_id,
+            bet_date_id=body.bet_date_id,
             credits_used=betdate.required_credits
         )
 
         # 8. Añadir al premio de la fecha usando la contribución de la transacción
         betdate.prize_cop += transaction_result["prize_contribution"]
-        
+
         # 9. Commit todas las transacciones
         session.commit()
         logger.info("place_bet OK — bet_id=%s user_id=%s", bet.id, user_id)
-        
+
         # 10. Preparar detalles adicionales
         bet_details = {
             "bet_date_name": betdate.name,
-            "close_datetime": betdate.close_datetime.isoformat(),
-            "predictions_count": len(request.predictions),
+            "close_datetime": betdate.close_datetime.isoformat() if betdate.close_datetime else None,
+            "predictions_count": len(body.predictions),
             "first_match_date": min([m.match_date for m in betdate.matches]).isoformat() if betdate.matches else None,
             "prize_contribution": transaction_result["prize_contribution"],
             "profit_to_house": transaction_result["profit_to_house"]
         }
-        
+
         return PlaceBetResponse(
             success=True,
             message="Pronósticos registrada exitosamente",
             bet_id=bet.id,
-            credits_used=betdate.required_credits,  # ✅ Usar betdate.required_credits
+            credits_used=betdate.required_credits,
             credits_remaining=wallet.credits,
             prize_contribution=transaction_result["prize_contribution"],
             total_prize=betdate.prize_cop + betdate.accumulated_prize,
             submitted_at=bet.submitted_at.isoformat() if bet.submitted_at else None,
             bet_details=bet_details
         )
-        
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
