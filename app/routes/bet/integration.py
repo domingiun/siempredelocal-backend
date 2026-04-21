@@ -645,10 +645,8 @@ def get_my_bets_enriched(
                     "home_score": match.home_score,
                     "away_score": match.away_score,
                     "stadium": match.stadium,
-                    "home_team": home_team.name if home_team else None,
-                    "away_team": away_team.name if away_team else None,
-                    "home_team_logo": home_team.logo_url if home_team else None,
-                    "away_team_logo": away_team.logo_url if away_team else None,
+                    "home_team": {"name": home_team.name, "logo_url": home_team.logo_url} if home_team else None,
+                    "away_team": {"name": away_team.name, "logo_url": away_team.logo_url} if away_team else None,
                     "competition": competition.name if competition else None,
                 },
             })
