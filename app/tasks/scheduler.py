@@ -45,31 +45,37 @@ def run_and_reschedule(session_factory) -> None:
     from app.tasks.sync_scores import sync_today_scores
     from app.models.competition.match import Match, MatchStatus
 
-    result = sync_today_scores(session_factory)
-    logger.info(
-        f"[scheduler] Sync ejecutado — updated={result['updated']} "
-        f"skipped={result['skipped']} no_match={result['no_match']}"
-    )
+    # El sync puede fallar (error de red, rate limit). Capturamos para siempre
+    # llegar al bloque de reschedule y no dejar el scheduler huérfano.
+    try:
+        result = sync_today_scores(session_factory)
+        logger.info(
+            f"[scheduler] Sync ejecutado — updated={result['updated']} "
+            f"skipped={result['skipped']} no_match={result['no_match']}"
+        )
+    except Exception as exc:
+        logger.error(f"[scheduler] Error en sync (se intentará reschedule igual): {exc}")
 
     # ¿Quedan partidos en curso o que deberían estar en curso?
     db = session_factory()
     try:
-        now = datetime.utcnow()
+        now_utc = datetime.utcnow()
+        # Los match_date están en hora local Colombia (UTC-5). Convertimos "ahora"
+        # a hora local para comparar correctamente.
+        COLOMBIA_OFFSET = timedelta(hours=5)
+        now_local = now_utc - COLOMBIA_OFFSET
         terminal = {MatchStatus.FINISHED.value, MatchStatus.CANCELLED.value}
 
-        # Caso 1: partidos cuyo match_date está en la ventana de 3h (hora UTC almacenada)
+        # Caso 1: partidos cuyo match_date (hora local) está en la ventana de 3h
         in_window = db.query(Match).filter(
             Match.status.notin_(list(terminal)),
-            Match.match_date <= now,
-            Match.match_date >= now - MAX_MATCH_DURATION,
+            Match.match_date <= now_local,
+            Match.match_date >= now_local - MAX_MATCH_DURATION,
         ).count()
 
         # Caso 2: partidos marcados "En curso" en la BD sin importar cuándo empezaron
-        # (cubre partidos nocturnos Colombia almacenados con hora local, cuyo match_date
-        # UTC puede estar > 3h atrás aunque el partido todavía esté en juego)
         in_progress = db.query(Match).filter(
             Match.status == MatchStatus.IN_PROGRESS.value,
-            Match.match_date <= now + MAX_MATCH_DURATION,  # no futuros lejanos
         ).count()
 
         still_active = in_window + in_progress
@@ -140,11 +146,14 @@ def schedule_todays_matches(session_factory) -> int:
             scheduled += 1
 
         # También programar follow-up inmediato si hay partidos que YA empezaron
-        # y aún no terminaron (por si el servidor se reinició durante un partido)
+        # y aún no terminaron (por si el servidor se reinició durante un partido).
+        # match_date está en hora local Colombia (UTC-5).
+        COLOMBIA_OFFSET = timedelta(hours=5)
+        now_local = now - COLOMBIA_OFFSET
         in_progress = db.query(Match).filter(
             Match.status.notin_(list(terminal)),
-            Match.match_date <= now,
-            Match.match_date >= now - MAX_MATCH_DURATION,
+            Match.match_date <= now_local,
+            Match.match_date >= now_local - MAX_MATCH_DURATION,
         ).count()
 
         if in_progress > 0:
