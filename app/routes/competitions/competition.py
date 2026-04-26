@@ -617,6 +617,38 @@ def get_competition_teams(
     
     return teams
 
+# -----------------------------
+# ASSIGN GROUP LETTERS
+# -----------------------------
+@router.patch("/{competition_id}/assign-groups")
+def assign_team_groups(
+    competition_id: int,
+    assignments: dict = Body(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_required)
+):
+    """Asignar letras de grupo a equipos. Body: {team_id: group_letter, ...}"""
+    competition = db.query(Competition).filter(
+        Competition.id == competition_id,
+        Competition.is_active == True
+    ).first()
+    if not competition:
+        raise HTTPException(status_code=404, detail="Competencia no encontrada")
+
+    updated = 0
+    for team_id_str, group_letter in assignments.items():
+        ct = db.query(CompetitionTeam).filter(
+            CompetitionTeam.competition_id == competition_id,
+            CompetitionTeam.team_id == int(team_id_str)
+        ).first()
+        if ct:
+            ct.group_letter = group_letter.strip().upper() if group_letter else None
+            updated += 1
+
+    db.commit()
+    return {"message": f"{updated} equipos actualizados", "updated": updated}
+
+
 from fastapi import Request
 
 @router.post("/{competition_id}/teams-debug")
