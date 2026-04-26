@@ -239,6 +239,14 @@ def sync_today_scores(session_factory) -> dict:
 
                 sync_after_match_update(match=match, db=db)
 
+                # Auto-finalizar BetDate si este fue el último partido en finalizar
+                just_finished = (
+                    old_status != MatchStatus.FINISHED.value
+                    and new_status == MatchStatus.FINISHED.value
+                )
+                if just_finished:
+                    _auto_finalize_betdates(match, db)
+
                 logger.info(
                     f"[sync] Partido {match.id} "
                     f"({getattr(match.home_team, 'name', '?')} vs "
@@ -262,3 +270,47 @@ def sync_today_scores(session_factory) -> dict:
         f"no_match={result['no_match']} errors={result['errors']}"
     )
     return result
+
+
+def _auto_finalize_betdates(match: Match, db) -> None:
+    """
+    Verifica si el partido recién finalizado era el último pendiente en alguna
+    BetDate cerrada. Si es así, ejecuta la auto-finalización (puntos + premios).
+    Idéntico al bloque en PUT /matches/{id} del panel admin.
+    """
+    from app.models.bet.BetDate import BetDate, BetDateStatus
+    from app.routes.bet.finalize import finalize_betdate
+    from app.schemas.bet.finalize import FinalizeRequest
+
+    try:
+        betdates = (
+            db.query(BetDate)
+            .join(BetDate.matches)
+            .filter(Match.id == match.id)
+            .all()
+        )
+    except Exception as exc:
+        logger.error(f"[sync] Error consultando BetDates para partido {match.id}: {exc}")
+        return
+
+    for betdate in betdates:
+        if betdate.status in [BetDateStatus.FINISHED.value, "finished"]:
+            continue
+
+        all_finished = all(
+            m.status == MatchStatus.FINISHED.value for m in betdate.matches
+        )
+
+        if not all_finished:
+            continue
+
+        try:
+            finalize_betdate(betdate.id, request=FinalizeRequest(), session=db)
+            logger.info(
+                f"[sync] BetDate {betdate.id} ({betdate.name}) auto-finalizada "
+                f"tras finalizar partido {match.id}"
+            )
+        except Exception as exc:
+            logger.error(
+                f"[sync] Error en auto-finalización de BetDate {betdate.id}: {exc}"
+            )
