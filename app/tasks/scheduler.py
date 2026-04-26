@@ -81,7 +81,7 @@ def run_and_reschedule(session_factory) -> None:
         still_active = in_window + in_progress
 
         if still_active > 0:
-            next_run = now + timedelta(minutes=FOLLOWUP_MINUTES)
+            next_run = now_utc + timedelta(minutes=FOLLOWUP_MINUTES)
             job_id = _followup_job_id(next_run)
             if _scheduler and not _scheduler.get_job(job_id):
                 _scheduler.add_job(
@@ -112,14 +112,19 @@ def schedule_todays_matches(session_factory) -> int:
     db = session_factory()
     scheduled = 0
     try:
-        now = datetime.utcnow()
+        now_utc = datetime.utcnow()
+        # match_date está en hora local Colombia (UTC-5). Convertimos a hora local
+        # para comparar con match_date, y convertimos match_date a UTC (+5h) para
+        # los DateTrigger (APScheduler interpreta datetimes naïf en su timezone = UTC).
+        COLOMBIA_OFFSET = timedelta(hours=5)
+        now_local = now_utc - COLOMBIA_OFFSET
         terminal = {MatchStatus.FINISHED.value, MatchStatus.CANCELLED.value}
 
-        # Ventana: ahora hasta 30 horas adelante
+        # Ventana: ahora hasta 30 horas adelante (comparamos en hora local Colombia)
         upcoming = db.query(Match).filter(
             Match.status.notin_(list(terminal)),
-            Match.match_date >= now,
-            Match.match_date <= now + timedelta(hours=30),
+            Match.match_date >= now_local,
+            Match.match_date <= now_local + timedelta(hours=30),
         ).all()
 
         for match in upcoming:
@@ -127,13 +132,14 @@ def schedule_todays_matches(session_factory) -> int:
             if _scheduler.get_job(job_id):
                 continue  # ya programado
 
-            run_date = match.match_date
-            if run_date < now:
-                run_date = now + timedelta(seconds=5)  # si ya pasó, ejecutar ya
+            # Convertir hora local Colombia → UTC para APScheduler
+            run_date_utc = match.match_date + COLOMBIA_OFFSET
+            if run_date_utc < now_utc:
+                run_date_utc = now_utc + timedelta(seconds=5)
 
             _scheduler.add_job(
                 func=run_and_reschedule,
-                trigger=DateTrigger(run_date=run_date),
+                trigger=DateTrigger(run_date=run_date_utc),
                 id=job_id,
                 args=[session_factory],
                 replace_existing=True,
@@ -141,32 +147,36 @@ def schedule_todays_matches(session_factory) -> int:
             )
             logger.info(
                 f"[scheduler] Job programado: partido {match.id} a las "
-                f"{run_date.strftime('%Y-%m-%d %H:%M')} UTC"
+                f"{match.match_date.strftime('%H:%M')} local "
+                f"({run_date_utc.strftime('%H:%M')} UTC)"
             )
             scheduled += 1
 
-        # También programar follow-up inmediato si hay partidos que YA empezaron
-        # y aún no terminaron (por si el servidor se reinició durante un partido).
-        # match_date está en hora local Colombia (UTC-5).
-        COLOMBIA_OFFSET = timedelta(hours=5)
-        now_local = now - COLOMBIA_OFFSET
-        in_progress = db.query(Match).filter(
+        # Sync inmediato si hay partidos que YA empezaron (o marcados "En curso")
+        # y aún no terminaron (cubre reinicios del servidor durante un partido).
+        in_window = db.query(Match).filter(
             Match.status.notin_(list(terminal)),
             Match.match_date <= now_local,
             Match.match_date >= now_local - MAX_MATCH_DURATION,
         ).count()
+        explicit_in_progress = db.query(Match).filter(
+            Match.status == MatchStatus.IN_PROGRESS.value,
+        ).count()
 
-        if in_progress > 0:
-            immediate_id = _followup_job_id(now + timedelta(seconds=10))
+        if in_window + explicit_in_progress > 0:
+            immediate_id = _followup_job_id(now_utc + timedelta(seconds=10))
             if not _scheduler.get_job(immediate_id):
                 _scheduler.add_job(
                     func=run_and_reschedule,
-                    trigger=DateTrigger(run_date=now + timedelta(seconds=10)),
+                    trigger=DateTrigger(run_date=now_utc + timedelta(seconds=10)),
                     id=immediate_id,
                     args=[session_factory],
                     replace_existing=True,
                 )
-                logger.info(f"[scheduler] Sync inmediato por {in_progress} partido(s) ya en curso")
+                logger.info(
+                    f"[scheduler] Sync inmediato: {in_window} en ventana horaria, "
+                    f"{explicit_in_progress} marcado(s) 'En curso'"
+                )
 
     finally:
         db.close()

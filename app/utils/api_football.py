@@ -19,6 +19,9 @@ BASE_URL = "https://v3.football.api-sports.io"
 TRACKED_LEAGUES = {
     1,    # FIFA World Cup
     2,    # UEFA Champions League
+    11,   # CONMEBOL Copa America
+    13,   # CONMEBOL Libertadores
+    14,   # CONMEBOL Sudamericana
     39,   # Premier League (England)
     71,   # Brasileirao Serie A (Brazil)
     78,   # Bundesliga (Germany)
