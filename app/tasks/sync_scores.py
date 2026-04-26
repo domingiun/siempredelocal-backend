@@ -239,13 +239,14 @@ def sync_today_scores(session_factory) -> dict:
 
                 sync_after_match_update(match=match, db=db)
 
-                # Auto-finalizar BetDate si este fue el último partido en finalizar
+                # Auto-finalizar BetDate y puntuar Polla si el partido terminó
                 just_finished = (
                     old_status != MatchStatus.FINISHED.value
                     and new_status == MatchStatus.FINISHED.value
                 )
                 if just_finished:
                     _auto_finalize_betdates(match, db)
+                    _auto_score_polla(match, db)
 
                 logger.info(
                     f"[sync] Partido {match.id} "
@@ -270,6 +271,15 @@ def sync_today_scores(session_factory) -> dict:
         f"no_match={result['no_match']} errors={result['errors']}"
     )
     return result
+
+
+def _auto_score_polla(match: Match, db) -> None:
+    """Puntúa los PollaMatches vinculados a este partido cuando termina."""
+    try:
+        from app.services.polla_scoring_service import auto_score_polla_matches_for_match
+        auto_score_polla_matches_for_match(match.id, db)
+    except Exception as exc:
+        logger.error(f"[sync] Error al puntuar polla para partido {match.id}: {exc}")
 
 
 def _auto_finalize_betdates(match: Match, db) -> None:

@@ -32,6 +32,7 @@ from app.routes.competitions import (competition,teams as competition_teams,matc
 from app.routes.teams import stats as team_stats
 from app.routes.admin import system
 from app.routes.content.articles import router as articles_router
+from app.routes.polla.polla import router as polla_router
 
 app = FastAPI(
     title="SiempreDeLocal API",
@@ -132,6 +133,7 @@ app.include_router(bet_transactions_router)    # Rutas de transacciones de pron�
 app.include_router(bet_pricing_router)         # Rutas de precios y planes de pronósticos
 app.include_router(bet_financial_router)       # Rutas de resumen financiero
 app.include_router(articles_router)            # Rutas de artículos del homepage
+app.include_router(polla_router)              # Rutas de la Polla Mundial
 
 @app.get("/")
 def read_root():

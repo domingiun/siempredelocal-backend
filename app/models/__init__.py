@@ -14,6 +14,9 @@ from .bet.audit_log import AuditLog
 # Contenido: artículos del admin para el homepage
 from .content.article import Article
 
+# Polla Mundial
+from .polla.polla import Polla, PollaMatch, PollaParticipant, PollaPrediction
+
 __all__ = [
     # User models
     "User", "UserRole",
@@ -29,4 +32,7 @@ __all__ = [
 
     # Content
     "Article",
+
+    # Polla Mundial
+    "Polla", "PollaMatch", "PollaParticipant", "PollaPrediction",
 ]
