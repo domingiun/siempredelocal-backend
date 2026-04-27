@@ -238,7 +238,7 @@ def join_polla(
         amount_credits=polla.entry_credits,
         amount_cop=polla.entry_credits * 5_000,
         status=TransactionStatus.COMPLETED,
-        description=f"Inscripción Polla {polla.name} {polla.edition_year}",
+        description=f"Inscripción {polla.name}",
     )
     db.add(tx)
 
