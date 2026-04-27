@@ -233,7 +233,8 @@ def join_polla(
     # Registrar transacción
     tx = Transaction(
         user_id=current_user.id,
-        transaction_type=TransactionType.BET_PLACED,
+        wallet_id=wallet.id,
+        transaction_type=TransactionType.BET_PLACEMENT,
         amount_credits=polla.entry_credits,
         amount_cop=polla.entry_credits * 5_000,
         status=TransactionStatus.COMPLETED,
