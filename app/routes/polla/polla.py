@@ -373,8 +373,8 @@ def get_next_matches_to_predict(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Próximos partidos disponibles para predecir (aún no cerrados y sin predicción).
-    Devuelve hasta `limit` partidos.
+    Todos los partidos abiertos para predecir o editar (no cerrados, no puntuados).
+    Incluye partidos con predicción existente para permitir edición hasta 1h antes.
     """
     participant = (
         db.query(PollaParticipant)
@@ -384,7 +384,6 @@ def get_next_matches_to_predict(
     if not participant:
         raise HTTPException(status_code=403, detail="No estás inscrito en esta polla")
 
-    submitted_ids = {pred.polla_match_id for pred in participant.predictions}
     now = datetime.utcnow()
 
     open_matches = (
@@ -392,12 +391,11 @@ def get_next_matches_to_predict(
         .filter(
             PollaMatch.polla_id == polla_id,
             PollaMatch.is_scored == False,
-            PollaMatch.id.notin_(submitted_ids) if submitted_ids else True,
         )
         .all()
     )
 
-    # Filtrar los que aún no han cerrado y ordenar por close_at
+    # Solo los que aún no han cerrado
     available = [
         pm for pm in open_matches
         if pm.close_at is None or now < pm.close_at
