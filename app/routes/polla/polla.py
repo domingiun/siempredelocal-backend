@@ -307,10 +307,10 @@ def get_my_polla_status(
         )
         .all()
     )
-    # Solo los que aún no han cerrado
+    # Solo los que aún no han cerrado (None = sin cierre = abierto)
     open_pending = [
         pm for pm in pending
-        if pm.close_at and now < pm.close_at
+        if pm.close_at is None or now < pm.close_at
     ]
 
     return {
@@ -624,6 +624,34 @@ def admin_update_rankings(
     _update_rankings(polla_id, db)
     db.commit()
     return {"success": True, "participant_count": len(polla.participants)}
+
+
+@router.post("/admin/{polla_id}/reset-close-at")
+def reset_close_at(
+    polla_id: int,
+    hours: int = 2,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user),
+):
+    """
+    Mueve close_at de todos los partidos no puntuados a (now + hours).
+    Útil para habilitar predicciones en una polla de prueba con partidos ya vencidos.
+    """
+    polla = db.get(Polla, polla_id)
+    if not polla:
+        raise HTTPException(status_code=404, detail="Polla no encontrada")
+
+    new_close = datetime.utcnow() + timedelta(hours=hours)
+    matches = (
+        db.query(PollaMatch)
+        .filter(PollaMatch.polla_id == polla_id, PollaMatch.is_scored == False)
+        .all()
+    )
+    for pm in matches:
+        pm.close_at = new_close
+    db.commit()
+    logger.info(f"[polla] reset close_at → {new_close} en {len(matches)} partidos de polla {polla_id}")
+    return {"success": True, "updated": len(matches), "new_close_at": new_close.isoformat()}
 
 
 @router.get("/admin/{polla_id}/participants")
