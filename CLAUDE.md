@@ -99,6 +99,7 @@ SECRET_KEY=<hex 64 chars — genera con: python -c "import secrets; print(secret
 DATABASE_URL=postgresql+psycopg://...
 SUPABASE_URL=https://asbcnidpjofqwgnmlbpx.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=<service role key de Supabase>
+API_FOOTBALL_KEY=<api key de API-Sports / API-Football>
 DEBUG=False
 ```
 

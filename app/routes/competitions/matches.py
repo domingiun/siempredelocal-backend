@@ -1193,6 +1193,8 @@ def api_name_preview(
         comparisons.append({
             "fixture_id":         f["fixture_id"],
             "league":             f["league"],
+            "league_id":          f["league_id"],
+            "league_country":     f.get("league_country"),
             "api_home_team":      f["home_team"],
             "api_away_team":      f["away_team"],
             "api_home_logo":      f["home_logo"],
@@ -1355,8 +1357,10 @@ def api_raw_test(
         leagues_in_response = {}
         for item in all_items:
             lid = item["league"]["id"]
-            lname = item["league"]["name"]
-            leagues_in_response[lid] = lname
+            leagues_in_response[lid] = {
+                "name": item["league"]["name"],
+                "country": item["league"].get("country"),
+            }
 
         tracked_found = {k: v for k, v in leagues_in_response.items() if k in TRACKED_LEAGUES}
         tracked_missing = [lid for lid in TRACKED_LEAGUES if lid not in leagues_in_response]

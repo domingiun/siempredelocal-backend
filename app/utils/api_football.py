@@ -168,6 +168,7 @@ def search_fixtures_for_admin(target_date: str) -> tuple[list[dict], dict]:
                 "fixture_id":  item["fixture"]["id"],
                 "league":      item["league"]["name"],
                 "league_id":   league_id,
+                "league_country": item["league"].get("country"),
                 "date":        item["fixture"]["date"],
                 "venue":       item["fixture"]["venue"]["name"],
                 "status_short": item["fixture"]["status"]["short"],
