@@ -625,6 +625,15 @@ def add_match_to_polla(
     db.commit()
     db.refresh(pm)
 
+    # Si el partido ya estaba Finalizado cuando se agregó, puntuar inmediatamente
+    if match.status == "Finalizado" and match.home_score is not None and match.away_score is not None:
+        try:
+            from app.services.polla_scoring_service import auto_score_polla_matches_for_match
+            auto_score_polla_matches_for_match(match.id, db)
+            logger.info(f"[polla] Partido {match.id} ya finalizado — scored al agregar a polla {polla_id}")
+        except Exception as e:
+            logger.error(f"[polla] Error al scoring inmediato de partido {match.id}: {e}")
+
     return {"success": True, "polla_match_id": pm.id, "phase": pm.phase}
 
 
