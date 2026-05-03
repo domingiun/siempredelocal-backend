@@ -761,7 +761,10 @@ def admin_rescore_finished(
             skipped_count += 1
             continue
         match = db.get(Match, pm.match_id)
-        if not match or match.home_score is None or match.away_score is None:
+        if (not match
+                or match.status != "Finalizado"
+                or match.home_score is None
+                or match.away_score is None):
             skipped_count += 1
             continue
         auto_score_polla_matches_for_match(pm.match_id, db)
