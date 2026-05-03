@@ -365,6 +365,69 @@ def get_my_predictions(
     ]
 
 
+@router.get("/{polla_id}/participant/{user_id}/predictions")
+def get_participant_scored_predictions(
+    polla_id: int,
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Predicciones de otro participante, SOLO para partidos ya puntuados.
+    Accesible para cualquier participante inscrito en la misma polla.
+    """
+    # Verificar que quien consulta también está inscrito
+    my_participant = (
+        db.query(PollaParticipant)
+        .filter_by(polla_id=polla_id, user_id=current_user.id)
+        .first()
+    )
+    if not my_participant:
+        raise HTTPException(status_code=403, detail="No estás inscrito en esta polla")
+
+    # Buscar el participante objetivo
+    participant = (
+        db.query(PollaParticipant)
+        .filter_by(polla_id=polla_id, user_id=user_id)
+        .first()
+    )
+    if not participant:
+        raise HTTPException(status_code=404, detail="Participante no encontrado")
+
+    # Solo predicciones de partidos ya puntuados
+    predictions = (
+        db.query(PollaPrediction)
+        .join(PollaMatch)
+        .filter(
+            PollaPrediction.participant_id == participant.id,
+            PollaMatch.is_scored == True,
+        )
+        .order_by(PollaMatch.match_order, PollaMatch.id)
+        .all()
+    )
+
+    return {
+        "user_id": user_id,
+        "username": participant.user.username,
+        "rank": participant.rank,
+        "total_points": participant.total_points,
+        "predictions": [
+            {
+                "id": pred.id,
+                "phase": pred.polla_match.phase,
+                "prediction_result": pred.prediction_result,
+                "predicted_winner_name": (
+                    pred.predicted_winner.name if pred.predicted_winner else None
+                ),
+                "points": pred.points,
+                "is_correct": pred.is_correct,
+                "match": _polla_match_to_response(pred.polla_match),
+            }
+            for pred in predictions
+        ],
+    }
+
+
 @router.get("/{polla_id}/next-matches")
 def get_next_matches_to_predict(
     polla_id: int,
