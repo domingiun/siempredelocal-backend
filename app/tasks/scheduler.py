@@ -19,7 +19,6 @@ from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
-from apscheduler.triggers.interval import IntervalTrigger
 
 logger = logging.getLogger(__name__)
 
@@ -185,48 +184,6 @@ def schedule_todays_matches(session_factory) -> int:
     return scheduled
 
 
-def score_pending_polla_matches(session_factory) -> None:
-    """
-    Safety-net: detecta PollaMatches sin puntuar cuyo partido real ya está
-    Finalizado y los puntúa automáticamente. No consume la API externa.
-    Se ejecuta cada 5 minutos.
-    """
-    from app.models.polla.polla import PollaMatch
-    from app.models.competition.match import Match, MatchStatus
-    from app.services.polla_scoring_service import auto_score_polla_matches_for_match
-
-    db = session_factory()
-    try:
-        unscored = (
-            db.query(PollaMatch)
-            .join(Match, PollaMatch.match_id == Match.id)
-            .filter(
-                PollaMatch.is_scored == False,
-                Match.status == MatchStatus.FINISHED.value,
-                Match.home_score.isnot(None),
-                Match.away_score.isnot(None),
-            )
-            .all()
-        )
-
-        if not unscored:
-            return
-
-        # Agrupar por match_id para evitar llamadas duplicadas
-        match_ids = {pm.match_id for pm in unscored}
-        for match_id in match_ids:
-            try:
-                auto_score_polla_matches_for_match(match_id, db)
-            except Exception as e:
-                logger.error(f"[scheduler] Error scoring polla match_id={match_id}: {e}")
-
-        logger.info(f"[scheduler] Polla safety-net: {len(match_ids)} partido(s) puntuados automáticamente")
-
-    except Exception as e:
-        logger.error(f"[scheduler] Error en score_pending_polla_matches: {e}")
-    finally:
-        db.close()
-
 
 def start_scheduler(session_factory) -> None:
     """
@@ -250,19 +207,8 @@ def start_scheduler(session_factory) -> None:
         misfire_grace_time=300,
     )
 
-    # Safety-net de polla: cada 5 minutos detecta polla_matches sin puntuar
-    # con partido real ya finalizado. No consume API externa.
-    _scheduler.add_job(
-        func=score_pending_polla_matches,
-        trigger=IntervalTrigger(minutes=5),
-        id="polla_score_safety_net",
-        args=[session_factory],
-        replace_existing=True,
-        misfire_grace_time=60,
-    )
-
     _scheduler.start()
-    logger.info("[scheduler] Iniciado — jobs por partido (DateTrigger) + scan diario 00:05 UTC + polla safety-net cada 5min")
+    logger.info("[scheduler] Iniciado — jobs por partido (DateTrigger) + scan diario 00:05 UTC")
 
     # Agenda los partidos de hoy/mañana inmediatamente al arrancar
     count = schedule_todays_matches(session_factory)
