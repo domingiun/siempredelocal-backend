@@ -732,6 +732,14 @@ def update_match(
                         str(e)
                     )
     
+    # 11.2 AUTO-PUNTUAR POLLA si el partido pasó a Finalizado
+    if original_status != MatchStatus.FINISHED.value and match_obj.status == MatchStatus.FINISHED.value:
+        try:
+            from app.services.polla_scoring_service import auto_score_polla_matches_for_match
+            auto_score_polla_matches_for_match(match_obj.id, db)
+        except Exception as e:
+            logger.error("Error al puntuar polla para partido %s: %s", match_obj.id, e)
+
     # 12. CARGAR RELACIONES PARA RESPUESTA
     match_with_relations = db.query(Match).options(
         joinedload(Match.home_team),
