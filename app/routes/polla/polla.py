@@ -729,3 +729,49 @@ def admin_list_participants(
         raise HTTPException(status_code=404, detail="Polla no encontrada")
 
     return _build_leaderboard(polla, db)
+
+
+@router.post("/admin/{polla_id}/rescore-finished")
+def admin_rescore_finished(
+    polla_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user),
+):
+    """
+    Puntúa automáticamente todos los PollaMatches sin puntuar cuyo partido
+    real ya está Finalizado. Útil cuando el scheduler no pudo ejecutar
+    auto_score (p.ej. partidos cargados después de que terminaron).
+    """
+    from app.services.polla_scoring_service import auto_score_polla_matches_for_match
+
+    polla = db.get(Polla, polla_id)
+    if not polla:
+        raise HTTPException(status_code=404, detail="Polla no encontrada")
+
+    unscored_pms = (
+        db.query(PollaMatch)
+        .filter(PollaMatch.polla_id == polla_id, PollaMatch.is_scored == False)
+        .all()
+    )
+
+    scored_count = 0
+    skipped_count = 0
+    for pm in unscored_pms:
+        if not pm.match_id:
+            skipped_count += 1
+            continue
+        match = db.get(Match, pm.match_id)
+        if not match or match.home_score is None or match.away_score is None:
+            skipped_count += 1
+            continue
+        auto_score_polla_matches_for_match(pm.match_id, db)
+        scored_count += 1
+
+    _update_rankings(polla_id, db)
+    db.commit()
+
+    logger.info(
+        f"[polla] rescore-finished polla {polla_id}: "
+        f"puntuados={scored_count} omitidos={skipped_count}"
+    )
+    return {"success": True, "scored": scored_count, "skipped": skipped_count}
