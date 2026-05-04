@@ -740,6 +740,114 @@ def admin_list_participants(
     return _build_leaderboard(polla, db)
 
 
+@router.post("/admin/{polla_id}/finalize")
+def admin_finalize_polla(
+    polla_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user),
+):
+    """
+    Finaliza la polla: identifica al(los) ganador(es) por mayor total_points,
+    divide el premio entre empatados, acredita saldo COP en sus wallets y
+    marca la polla como 'finished'. Idempotente respecto al doble pago.
+    """
+    polla = db.get(Polla, polla_id)
+    if not polla:
+        raise HTTPException(status_code=404, detail="Polla no encontrada")
+    if polla.status == "finished":
+        raise HTTPException(status_code=400, detail="La polla ya fue finalizada y liquidada")
+
+    unscored = (
+        db.query(PollaMatch)
+        .filter(PollaMatch.polla_id == polla_id, PollaMatch.is_scored == False)
+        .count()
+    )
+    if unscored > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Hay {unscored} partido(s) sin puntuar. Usa 'Puntuar partidos finalizados' primero."
+        )
+
+    participants = db.query(PollaParticipant).filter_by(polla_id=polla_id).all()
+    if not participants:
+        raise HTTPException(status_code=400, detail="No hay participantes en esta polla")
+
+    max_pts = max(p.total_points for p in participants)
+    winners = [p for p in participants if p.total_points == max_pts]
+
+    total_prize = polla.current_prize_cop
+    fee_pct = polla.platform_fee_pct or 0
+    net_total = int(total_prize * (1 - fee_pct / 100))
+    prize_per_winner = net_total // len(winners)
+
+    winner_details = []
+    for participant in winners:
+        if participant.prize_distributed:
+            winner_details.append({
+                "user_id": participant.user_id,
+                "username": participant.user.username if participant.user else str(participant.user_id),
+                "total_points": participant.total_points,
+                "prize_cop": participant.prize_won_cop,
+                "already_distributed": True,
+            })
+            continue
+
+        wallet = (
+            db.query(UserWallet)
+            .filter_by(user_id=participant.user_id)
+            .with_for_update()
+            .first()
+        )
+        if not wallet:
+            wallet = UserWallet(user_id=participant.user_id, credits=0, balance_cop=0, total_prizes_won=0)
+            db.add(wallet)
+            db.flush()
+
+        wallet.balance_cop += prize_per_winner
+        wallet.total_prizes_won = (wallet.total_prizes_won or 0) + prize_per_winner
+
+        tx = Transaction(
+            user_id=participant.user_id,
+            wallet_id=wallet.id,
+            transaction_type=TransactionType.PRIZE_WIN,
+            amount_cop=prize_per_winner,
+            net_amount_cop=prize_per_winner,
+            status=TransactionStatus.COMPLETED,
+            description=f"Premio {polla.name} — {max_pts} pts · {len(winners)} ganador(es)",
+        )
+        db.add(tx)
+
+        participant.prize_won_cop = prize_per_winner
+        participant.prize_distributed = True
+
+        winner_details.append({
+            "user_id": participant.user_id,
+            "username": participant.user.username if participant.user else str(participant.user_id),
+            "total_points": participant.total_points,
+            "prize_cop": prize_per_winner,
+            "already_distributed": False,
+        })
+
+    polla.status = "finished"
+    db.commit()
+
+    logger.info(
+        f"[polla] Polla {polla_id} finalizada por admin {admin.id}. "
+        f"Ganadores: {[w['username'] for w in winner_details]} · "
+        f"Premio neto/ganador: ${prize_per_winner:,} COP"
+    )
+
+    return {
+        "success": True,
+        "winners": winner_details,
+        "total_prize_cop": total_prize,
+        "fee_pct": fee_pct,
+        "net_total_cop": net_total,
+        "prize_per_winner_cop": prize_per_winner,
+        "winner_count": len(winners),
+    }
+
+
 @router.post("/admin/{polla_id}/rescore-finished")
 def admin_rescore_finished(
     polla_id: int,
