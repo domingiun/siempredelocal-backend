@@ -113,12 +113,36 @@ def _build_leaderboard(polla: Polla, db: Session) -> list[dict]:
 
 # ── Endpoints públicos ─────────────────────────────────────────────────────
 
+@router.get("/admin/all")
+def admin_list_all_pollas(
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user),
+):
+    """Lista TODAS las pollas incluyendo ocultas y canceladas (solo admin)."""
+    pollas = db.query(Polla).order_by(Polla.edition_year.desc()).all()
+    return [
+        {
+            "id": p.id,
+            "name": p.name,
+            "description": p.description,
+            "status": p.status,
+            "edition_year": p.edition_year,
+            "entry_credits": p.entry_credits,
+            "current_prize_cop": p.current_prize_cop,
+            "participant_count": len(p.participants),
+            "registration_open_at": p.registration_open_at,
+            "registration_close_at": p.registration_close_at,
+        }
+        for p in pollas
+    ]
+
+
 @router.get("/")
 def list_pollas(db: Session = Depends(get_db)):
-    """Lista todas las pollas (activas y anteriores)."""
+    """Lista pollas visibles al público (excluye hidden y cancelled)."""
     pollas = (
         db.query(Polla)
-        .filter(Polla.status != "cancelled")
+        .filter(Polla.status.notin_(["cancelled", "hidden"]))
         .order_by(Polla.edition_year.desc())
         .all()
     )
