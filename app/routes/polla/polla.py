@@ -211,6 +211,59 @@ def get_polla_matches(
 
 # ── Endpoints autenticados ─────────────────────────────────────────────────
 
+@router.post("/{polla_id}/purchase-entry")
+def purchase_polla_entry(
+    polla_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Registra una transacción pendiente de recarga para inscribirse en la polla.
+    El admin aprueba el pago → créditos acreditados → usuario puede inscribirse.
+    """
+    from app.services.transaction_service import TransactionService
+
+    polla = db.get(Polla, polla_id)
+    if not polla:
+        raise HTTPException(status_code=404, detail="Polla no encontrada")
+    if polla.status not in ("open", "in_progress"):
+        raise HTTPException(status_code=400, detail="La polla no está abierta para inscripciones")
+
+    existing = (
+        db.query(PollaParticipant)
+        .filter_by(polla_id=polla_id, user_id=current_user.id)
+        .first()
+    )
+    if existing:
+        raise HTTPException(status_code=400, detail="Ya estás inscrito en esta polla")
+
+    amount_cop = polla.entry_credits * 5_000  # $5,000 COP por crédito
+
+    tx = TransactionService.create_transaction(
+        session=db,
+        user_id=current_user.id,
+        transaction_type=TransactionType.CREDIT_PURCHASE,
+        amount_cop=amount_cop,
+        amount_credits=polla.entry_credits,
+        description=f"Recarga para inscripción en {polla.name}",
+        payment_method="nequi",
+    )
+    db.commit()
+    db.refresh(tx)
+
+    logger.info(
+        f"[polla] Usuario {current_user.id} solicitó recarga de entrada "
+        f"para polla {polla_id} — tx {tx.id} por ${amount_cop:,} COP"
+    )
+
+    return {
+        "transaction_id": tx.id,
+        "amount_cop": amount_cop,
+        "credits": polla.entry_credits,
+        "polla_name": polla.name,
+    }
+
+
 @router.post("/{polla_id}/join")
 def join_polla(
     polla_id: int,
