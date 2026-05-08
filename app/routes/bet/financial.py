@@ -322,6 +322,7 @@ def get_users_credits_summary(
                 username=user.username,
                 full_name=user.full_name,
                 avatar_url=user.avatar_url,
+                phone=user.phone,
                 credits_used=used_by_user.get(user.id, 0),
                 credits_available=int(wallet.credits if wallet else 0),
                 credits_used_last_betdate=last_betdate_usage.get(user.id, 0),

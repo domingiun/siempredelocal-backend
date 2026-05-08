@@ -43,6 +43,7 @@ class UserCreditsSummary(BaseModel):
     username: str
     full_name: Optional[str] = None
     avatar_url: Optional[str] = None
+    phone: Optional[str] = None
     credits_used: int = 0
     credits_available: int = 0
     credits_used_last_betdate: int = 0
