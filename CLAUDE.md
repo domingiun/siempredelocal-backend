@@ -261,6 +261,24 @@ def names_match(name_a, name_b):
 
 ## Módulo Polla (`/polla` y `/mundial`)
 
+### Modo Mundial (`VITE_POLLA_MODE=true`)
+**Estado actual (Mayo 2026): ACTIVO — la app está en modo polla durante el Mundial.**
+
+Cuando `VITE_POLLA_MODE=true` (variable en Vercel):
+- `/` y `/home` redirigen a `/mundial`
+- `/dashboard` redirige a `/mundial/dashboard`
+- Sidebar oculta: Pronósticos, Partidos, Competencias, Equipos, Reportes
+- Sidebar admin oculta: Competencias, Equipos, Reportes, Nueva Fecha de BetDate
+
+**Al terminar el Mundial (≈ julio 2026) → restaurar modo normal:**
+1. En Vercel → Settings → Environment Variables → cambiar `VITE_POLLA_MODE` a `false` (o eliminar la variable)
+2. Redeploy automático → todo el sistema de apuestas/BetDates vuelve a estar visible
+3. No hay cambios en el backend — todos los datos siguen intactos
+
+### Performance del frontend
+- **Lazy loading**: todas las páginas usan `React.lazy` + `Suspense` — Vite genera un chunk por ruta, el usuario solo descarga lo que navega
+- **Cache en pollaService**: `listPollas`, `getPolla`, `getMyStatus` tienen TTL de 30 s — evita llamadas repetidas al navegar entre páginas de la polla. Se invalida automáticamente en operaciones de escritura (join, submit, adminUpdate)
+
 ### Video promocional (`PromoModal`)
 - `PromoModal.jsx` se monta en `PollaLandingPage` y se muestra **siempre** al entrar a `/mundial`
 - Embebe `promo_polla_mundial.html` en un iframe 360×640. El HTML usa **Web Speech API** (`speechSynthesis`) para narrar cada escena.
