@@ -60,17 +60,14 @@ def run_and_reschedule(session_factory) -> None:
     db = session_factory()
     try:
         now_utc = datetime.utcnow()
-        # Los match_date están en hora local Colombia (UTC-5). Convertimos "ahora"
-        # a hora local para comparar correctamente.
-        COLOMBIA_OFFSET = timedelta(hours=5)
-        now_local = now_utc - COLOMBIA_OFFSET
+        # match_date se almacena en UTC en la BD.
         terminal = {MatchStatus.FINISHED.value, MatchStatus.CANCELLED.value}
 
-        # Caso 1: partidos cuyo match_date (hora local) está en la ventana de 3h
+        # Caso 1: partidos cuyo match_date (UTC) está en la ventana de 3h
         in_window = db.query(Match).filter(
             Match.status.notin_(list(terminal)),
-            Match.match_date <= now_local,
-            Match.match_date >= now_local - MAX_MATCH_DURATION,
+            Match.match_date <= now_utc,
+            Match.match_date >= now_utc - MAX_MATCH_DURATION,
         ).count()
 
         # Caso 2: partidos marcados "En curso" en la BD sin importar cuándo empezaron
@@ -113,18 +110,15 @@ def schedule_todays_matches(session_factory) -> int:
     scheduled = 0
     try:
         now_utc = datetime.utcnow()
-        # match_date está en hora local Colombia (UTC-5). Convertimos a hora local
-        # para comparar con match_date, y convertimos match_date a UTC (+5h) para
-        # los DateTrigger (APScheduler interpreta datetimes naïf en su timezone = UTC).
-        COLOMBIA_OFFSET = timedelta(hours=5)
-        now_local = now_utc - COLOMBIA_OFFSET
+        # match_date se almacena en UTC en la BD.
+        # APScheduler interpreta datetimes naïf como UTC, así que no hay conversión.
         terminal = {MatchStatus.FINISHED.value, MatchStatus.CANCELLED.value}
 
-        # Ventana: ahora hasta 30 horas adelante (comparamos en hora local Colombia)
+        # Ventana: ahora hasta 30 horas adelante (UTC)
         upcoming = db.query(Match).filter(
             Match.status.notin_(list(terminal)),
-            Match.match_date >= now_local,
-            Match.match_date <= now_local + timedelta(hours=30),
+            Match.match_date >= now_utc,
+            Match.match_date <= now_utc + timedelta(hours=30),
         ).all()
 
         for match in upcoming:
@@ -132,8 +126,8 @@ def schedule_todays_matches(session_factory) -> int:
             if _scheduler.get_job(job_id):
                 continue  # ya programado
 
-            # Convertir hora local Colombia → UTC para APScheduler
-            run_date_utc = match.match_date + COLOMBIA_OFFSET
+            # match_date ya está en UTC — usarlo directamente como run_date
+            run_date_utc = match.match_date
             if run_date_utc < now_utc:
                 run_date_utc = now_utc + timedelta(seconds=5)
 
@@ -156,8 +150,8 @@ def schedule_todays_matches(session_factory) -> int:
         # y aún no terminaron (cubre reinicios del servidor durante un partido).
         in_window = db.query(Match).filter(
             Match.status.notin_(list(terminal)),
-            Match.match_date <= now_local,
-            Match.match_date >= now_local - MAX_MATCH_DURATION,
+            Match.match_date <= now_utc,
+            Match.match_date >= now_utc - MAX_MATCH_DURATION,
         ).count()
         explicit_in_progress = db.query(Match).filter(
             Match.status == MatchStatus.IN_PROGRESS.value,
