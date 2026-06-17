@@ -925,6 +925,110 @@ def admin_finalize_polla(
     }
 
 
+@router.post("/admin/{polla_id}/rescore-match/{pm_id}")
+def admin_rescore_match(
+    polla_id: int,
+    pm_id: int,
+    body: PollaMatchScore,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user),
+):
+    """
+    Corrige el resultado de un PollaMatch ya puntuado y recalcula TODOS los
+    puntos de la polla desde cero. Usar cuando se ingresó un marcador incorrecto.
+
+    - Si body.actual_result / actual_winner_id se envía, usa ese valor.
+    - Si no se envía, re-deriva el resultado desde el marcador actual del partido.
+    """
+    from app.models.polla.polla import PHASE_ORDER
+
+    pm = db.get(PollaMatch, pm_id)
+    if not pm or pm.polla_id != polla_id:
+        raise HTTPException(status_code=404, detail="Partido no encontrado en esta polla")
+    if not pm.is_scored:
+        raise HTTPException(
+            status_code=400,
+            detail="Este partido no ha sido puntuado — usa score-match"
+        )
+
+    is_groups = (pm.phase == "groups")
+
+    # Actualizar resultado: manual override o re-derivar del partido real
+    if body.actual_result is not None:
+        pm.actual_result = body.actual_result
+        pm.actual_winner_id = None
+    elif body.actual_winner_id is not None:
+        pm.actual_winner_id = body.actual_winner_id
+        pm.actual_result = None
+    else:
+        if not pm.match_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Sin partido vinculado — provee actual_result manualmente"
+            )
+        match = db.get(Match, pm.match_id)
+        if not match or match.home_score is None or match.away_score is None:
+            raise HTTPException(
+                status_code=400,
+                detail="El partido no tiene marcador — provee actual_result manualmente"
+            )
+        derived_result, derived_winner = compute_polla_result_from_match(match, is_groups)
+        pm.actual_result = derived_result
+        pm.actual_winner_id = derived_winner
+
+    # Todos los partidos ya puntuados, ordenados por fase y match_order
+    all_scored = (
+        db.query(PollaMatch)
+        .filter(PollaMatch.polla_id == polla_id, PollaMatch.is_scored == True)
+        .all()
+    )
+
+    def _phase_key(m):
+        try:
+            return (PHASE_ORDER.index(m.phase), m.match_order, m.id)
+        except ValueError:
+            return (99, m.match_order, m.id)
+
+    all_scored.sort(key=_phase_key)
+    scored_ids = [m.id for m in all_scored]
+
+    # Reset completo de participantes
+    participants = db.query(PollaParticipant).filter_by(polla_id=polla_id).all()
+    for p in participants:
+        p.base_points = 0
+        p.bonus_points = 0
+        p.total_points = 0
+
+    # Reset completo de predicciones e is_scored
+    for m in all_scored:
+        for pred in m.predictions:
+            pred.points = 0
+            pred.is_correct = False
+        m.is_scored = False
+
+    db.commit()
+
+    # Replay: re-puntuar cada partido en orden de fase
+    for mid in scored_ids:
+        score_polla_match(mid, db)
+
+    _update_rankings(polla_id, db)
+    db.commit()
+
+    logger.info(
+        f"[polla] rescore-match polla {polla_id}: corregido pm {pm_id} "
+        f"→ result={pm.actual_result} winner={pm.actual_winner_id}, "
+        f"replay de {len(scored_ids)} partidos"
+    )
+    return {
+        "success": True,
+        "rescored_matches": len(scored_ids),
+        "corrected_pm_id": pm_id,
+        "new_actual_result": pm.actual_result,
+        "new_actual_winner_id": pm.actual_winner_id,
+    }
+
+
 @router.post("/admin/{polla_id}/rescore-finished")
 def admin_rescore_finished(
     polla_id: int,
