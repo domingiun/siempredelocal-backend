@@ -26,7 +26,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
 from app.core.security import get_current_user
@@ -88,6 +88,7 @@ def _build_leaderboard(polla: Polla, db: Session) -> list[dict]:
     participants = (
         db.query(PollaParticipant)
         .filter_by(polla_id=polla.id)
+        .options(selectinload(PollaParticipant.user))
         .order_by(PollaParticipant.total_points.desc(), PollaParticipant.joined_at)
         .all()
     )
@@ -204,7 +205,17 @@ def get_polla_matches(
     q = db.query(PollaMatch).filter(PollaMatch.polla_id == polla_id)
     if phase:
         q = q.filter(PollaMatch.phase == phase)
-    matches = q.order_by(PollaMatch.phase, PollaMatch.match_order, PollaMatch.id).all()
+    matches = (
+        q.options(
+            selectinload(PollaMatch.match).options(
+                selectinload(Match.home_team),
+                selectinload(Match.away_team),
+            ),
+            selectinload(PollaMatch.actual_winner),
+        )
+        .order_by(PollaMatch.phase, PollaMatch.match_order, PollaMatch.id)
+        .all()
+    )
 
     return [_polla_match_to_response(pm) for pm in matches]
 
@@ -421,7 +432,16 @@ def get_my_predictions(
     q = db.query(PollaPrediction).filter_by(participant_id=participant.id)
     if phase:
         q = q.join(PollaMatch).filter(PollaMatch.phase == phase)
-    predictions = q.all()
+    predictions = q.options(
+        selectinload(PollaPrediction.polla_match).options(
+            selectinload(PollaMatch.match).options(
+                selectinload(Match.home_team),
+                selectinload(Match.away_team),
+            ),
+            selectinload(PollaMatch.actual_winner),
+        ),
+        selectinload(PollaPrediction.predicted_winner),
+    ).all()
 
     return [
         {
@@ -479,6 +499,16 @@ def get_participant_scored_predictions(
             PollaPrediction.participant_id == participant.id,
             PollaMatch.is_scored == True,
         )
+        .options(
+            selectinload(PollaPrediction.polla_match).options(
+                selectinload(PollaMatch.match).options(
+                    selectinload(Match.home_team),
+                    selectinload(Match.away_team),
+                ),
+                selectinload(PollaMatch.actual_winner),
+            ),
+            selectinload(PollaPrediction.predicted_winner),
+        )
         .order_by(PollaMatch.match_order, PollaMatch.id)
         .all()
     )
@@ -531,6 +561,13 @@ def get_next_matches_to_predict(
         .filter(
             PollaMatch.polla_id == polla_id,
             PollaMatch.is_scored == False,
+        )
+        .options(
+            selectinload(PollaMatch.match).options(
+                selectinload(Match.home_team),
+                selectinload(Match.away_team),
+            ),
+            selectinload(PollaMatch.actual_winner),
         )
         .all()
     )
