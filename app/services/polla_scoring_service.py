@@ -8,8 +8,8 @@ Puntos base por fase:
   - qf, sf, third, final: 3 pts por ganador correcto
 
 Bonificaciones (calculadas al finalizar cada fase):
-  1. Racha: 3+ predicciones consecutivas correctas (por match_order) → +1 pt,
-     una sola vez por participante por fase.
+  1. Racha: cada bloque de 3 consecutivos correctos en la misma racha = +1 pt.
+     Racha de 3-5=+1, 6-8=+2, 9-11=+3, etc. Múltiples rachas se acumulan.
   2. Más aciertos: el/los participantes con más correctos en la fase reciben
      +5 (groups, r32) o +3 (r16 en adelante).
 """
@@ -115,8 +115,9 @@ def _maybe_compute_phase_bonuses(polla_id: int, phase: str, db: Session) -> None
 
 def _compute_racha_bonus(polla_id: int, phase: str, db: Session) -> None:
     """
-    +1 pt por participante que tenga 3+ predicciones consecutivas correctas
-    en esta fase (ordenadas por match_order). Solo una vez por fase.
+    +1 pt por cada bloque de 3 predicciones consecutivas correctas en la misma racha.
+    Racha de 3-5 = +1, de 6-8 = +2, de 9-11 = +3, etc. (floor(racha/3))
+    Múltiples rachas separadas se suman independientemente.
     """
     phase_matches = (
         db.query(PollaMatch)
@@ -135,20 +136,21 @@ def _compute_racha_bonus(polla_id: int, phase: str, db: Session) -> None:
         }
 
         streak = 0
-        earned = False
+        total_bonus = 0
         for pm in phase_matches:
             pred = pred_by_match.get(pm.id)
             if pred and pred.is_correct:
                 streak += 1
-                if streak >= 3 and not earned:
-                    participant.bonus_points += 1
-                    earned = True
             else:
+                total_bonus += streak // 3
                 streak = 0
+        # Racha abierta al final de la fase también cuenta
+        total_bonus += streak // 3
 
-        if earned:
+        if total_bonus > 0:
+            participant.bonus_points += total_bonus
             logger.info(
-                f"[polla] Racha +1 → participant {participant.id} "
+                f"[polla] Racha +{total_bonus} → participant {participant.id} "
                 f"(user {participant.user_id}) en fase {phase}"
             )
 
