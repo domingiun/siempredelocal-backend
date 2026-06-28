@@ -1113,3 +1113,66 @@ def admin_rescore_finished(
         f"puntuados={scored_count} omitidos={skipped_count}"
     )
     return {"success": True, "scored": scored_count, "skipped": skipped_count}
+
+
+@router.post("/admin/{polla_id}/recompute-bonuses")
+def admin_recompute_bonuses(
+    polla_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user),
+):
+    """
+    Resetea bonus_points a 0 y recalcula los bonos de TODAS las fases
+    que ya tienen todos sus partidos puntuados. Usar cuando cambió la lógica
+    de bonificaciones o para corregir bonos mal aplicados.
+    """
+    from app.services.polla_scoring_service import (
+        _compute_racha_bonus, _compute_most_correct_bonus,
+    )
+    from app.models.polla.polla import PHASE_ORDER
+
+    polla = db.get(Polla, polla_id)
+    if not polla:
+        raise HTTPException(status_code=404, detail="Polla no encontrada")
+
+    # Reset bonos de todos los participantes
+    participants = db.query(PollaParticipant).filter_by(polla_id=polla_id).all()
+    for p in participants:
+        p.bonus_points = 0
+
+    db.flush()
+
+    # Recalcular bonos por cada fase completamente puntuada
+    phases_done = []
+    for phase in PHASE_ORDER:
+        total = (
+            db.query(PollaMatch)
+            .filter(PollaMatch.polla_id == polla_id, PollaMatch.phase == phase)
+            .count()
+        )
+        if total == 0:
+            continue
+        unscored = (
+            db.query(PollaMatch)
+            .filter(
+                PollaMatch.polla_id == polla_id,
+                PollaMatch.phase == phase,
+                PollaMatch.is_scored == False,
+            )
+            .count()
+        )
+        if unscored > 0:
+            continue
+        _compute_racha_bonus(polla_id, phase, db)
+        _compute_most_correct_bonus(polla_id, phase, db)
+        phases_done.append(phase)
+
+    # Recalcular total_points
+    for p in participants:
+        p.total_points = p.base_points + p.bonus_points
+
+    _update_rankings(polla_id, db)
+    db.commit()
+
+    logger.info(f"[polla] recompute-bonuses polla {polla_id}: fases={phases_done}")
+    return {"success": True, "phases_recomputed": phases_done}
