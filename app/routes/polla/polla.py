@@ -80,6 +80,8 @@ def _polla_match_to_response(pm: PollaMatch) -> dict:
         "away_logo": away_team.logo_url if away_team else None,
         "home_score": m.home_score if m else None,
         "away_score": m.away_score if m else None,
+        "penalty_home": m.penalty_home if m else None,
+        "penalty_away": m.penalty_away if m else None,
         "match_status": m.status if m else None,
     }
 
