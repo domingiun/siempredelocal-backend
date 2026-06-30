@@ -299,6 +299,8 @@ def get_matches(
 
             "home_score": match.home_score,
             "away_score": match.away_score,
+            "penalty_home": match.penalty_home,
+            "penalty_away": match.penalty_away,
             "status": match.status,
 
             "round_name": match.round.name if match.round else None,
@@ -343,6 +345,8 @@ def get_match(
         "city": match_obj.city,
         "home_score": match_obj.home_score,
         "away_score": match_obj.away_score,
+        "penalty_home": match_obj.penalty_home,
+        "penalty_away": match_obj.penalty_away,
         "status": match_obj.status,
         "created_at": match_obj.created_at,
         "updated_at": match_obj.updated_at,
@@ -405,6 +409,8 @@ def get_match_public(
         "city": match_obj.city,
         "home_score": match_obj.home_score,
         "away_score": match_obj.away_score,
+        "penalty_home": match_obj.penalty_home,
+        "penalty_away": match_obj.penalty_away,
         "status": match_obj.status,
         "created_at": match_obj.created_at,
         "updated_at": match_obj.updated_at,
