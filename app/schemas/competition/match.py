@@ -94,6 +94,8 @@ class MatchCreate(MatchBase):
 class MatchUpdate(BaseModel):
     home_score: Optional[int] = Field(None, ge=0, le=50)
     away_score: Optional[int] = Field(None, ge=0, le=50)
+    penalty_home: Optional[int] = Field(None, ge=0, le=50)
+    penalty_away: Optional[int] = Field(None, ge=0, le=50)
     status: Optional[str] = None
     match_date: Optional[datetime] = None
     home_team_id: Optional[int] = None
@@ -176,6 +178,8 @@ class MatchResponse(BaseModel):
     city: Optional[str]
     home_score: int
     away_score: int
+    penalty_home: Optional[int] = None
+    penalty_away: Optional[int] = None
     status: MatchStatus
     api_fixture_id: Optional[int] = None
     api_synced_at: Optional[datetime] = None
@@ -208,6 +212,8 @@ class MatchSimpleResponse(BaseModel):
     away_team_country: Optional[str]
     home_score: int
     away_score: int
+    penalty_home: Optional[int] = None
+    penalty_away: Optional[int] = None
     status: MatchStatus
     competition_id: Optional[int] = None
     round_id: Optional[int] = None
