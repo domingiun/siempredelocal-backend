@@ -209,9 +209,11 @@ def sync_today_scores(session_factory) -> dict:
                 result["no_match"] += 1
                 continue
 
-            new_status = fixture["status"]
-            new_home   = fixture["home_score"]
-            new_away   = fixture["away_score"]
+            new_status    = fixture["status"]
+            new_home      = fixture["home_score"]
+            new_away      = fixture["away_score"]
+            new_pen_home  = fixture.get("penalty_home")
+            new_pen_away  = fixture.get("penalty_away")
 
             # Guardar api_fixture_id si se encontró por nombre (para futuras syncs exactas)
             fixture_id_changed = match.api_fixture_id != fixture["fixture_id"]
@@ -220,7 +222,9 @@ def sync_today_scores(session_factory) -> dict:
             if (not fixture_id_changed
                     and match.status == new_status
                     and match.home_score == new_home
-                    and match.away_score == new_away):
+                    and match.away_score == new_away
+                    and match.penalty_home == new_pen_home
+                    and match.penalty_away == new_pen_away):
                 result["skipped"] += 1
                 continue
 
@@ -229,6 +233,8 @@ def sync_today_scores(session_factory) -> dict:
 
                 match.home_score      = new_home
                 match.away_score      = new_away
+                match.penalty_home    = new_pen_home
+                match.penalty_away    = new_pen_away
                 match.status          = new_status
                 match.api_synced_at   = datetime.utcnow()
                 if fixture_id_changed:

@@ -37,6 +37,8 @@ class Match(Base):
     # Resultado
     home_score = Column(Integer, default=0)
     away_score = Column(Integer, default=0)
+    penalty_home = Column(Integer, nullable=True)   # marcador en penaltis (None si no hubo)
+    penalty_away = Column(Integer, nullable=True)
     status = Column(Enum(MatchStatus, values_callable=lambda x: [e.value for e in x]),
     default=MatchStatus.SCHEDULED
 )

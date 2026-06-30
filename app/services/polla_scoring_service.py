@@ -260,11 +260,22 @@ def compute_polla_result_from_match(match, is_groups: bool) -> tuple[str | None,
         else:
             return "E", None
     else:
-        # En eliminatorias siempre hay ganador (penales incluidos)
-        if home >= away:
+        # En eliminatorias siempre hay ganador
+        if home > away:
             return None, match.home_team_id
-        else:
+        elif away > home:
             return None, match.away_team_id
+        else:
+            # Empate en 90min/tiempo extra → definición por penaltis
+            pen_home = match.penalty_home
+            pen_away = match.penalty_away
+            if pen_home is not None and pen_away is not None:
+                if pen_home > pen_away:
+                    return None, match.home_team_id
+                else:
+                    return None, match.away_team_id
+            # Penaltis aún no sincronizados → esperar próxima sync
+            return None, None
 
 
 def auto_score_polla_matches_for_match(match_id: int, db: Session) -> None:

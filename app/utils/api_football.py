@@ -105,6 +105,9 @@ def get_fixtures_by_date(target_date: str) -> list[dict]:
             status_short = item["fixture"]["status"]["short"]
             home_score   = item["goals"]["home"]
             away_score   = item["goals"]["away"]
+            penalty      = (item.get("score") or {}).get("penalty") or {}
+            pen_home     = penalty.get("home")   # None si no hubo penaltis
+            pen_away     = penalty.get("away")
 
             results.append({
                 "fixture_id":   item["fixture"]["id"],
@@ -113,6 +116,8 @@ def get_fixtures_by_date(target_date: str) -> list[dict]:
                 "status":       STATUS_MAP.get(status_short, "Programado"),
                 "home_score":   home_score if home_score is not None else 0,
                 "away_score":   away_score if away_score is not None else 0,
+                "penalty_home": pen_home,
+                "penalty_away": pen_away,
                 "is_finished":  status_short in FINISHED_STATUSES,
                 "home_team":    item["teams"]["home"]["name"],
                 "away_team":    item["teams"]["away"]["name"],
