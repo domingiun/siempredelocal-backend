@@ -878,6 +878,8 @@ def get_today_matches(
             "competition_name": m.competition.name if m.competition else None,
             "home_score": m.home_score,
             "away_score": m.away_score,
+            "penalty_home": m.penalty_home,
+            "penalty_away": m.penalty_away,
             "status": m.status.value if hasattr(m.status, "value") else m.status,
             "round_name": m.round.name if m.round else None,
             "round_number": m.round.round_number if m.round else None,
