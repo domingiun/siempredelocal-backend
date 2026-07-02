@@ -842,18 +842,20 @@ def get_today_matches(
     matches_today = db.query(Match).options(
         joinedload(Match.home_team),
         joinedload(Match.away_team),
-        joinedload(Match.competition)
+        joinedload(Match.competition),
+        joinedload(Match.round)
     ).filter(
         Match.match_date >= start_utc_naive,
         Match.match_date < end_utc_naive,
     ).order_by(Match.match_date).all()
-    
+
     # Partidos próximos (próximos 7 días, solo programados)
     next_week_end_utc = end_utc_naive + timedelta(days=7)
     matches_upcoming = db.query(Match).options(
         joinedload(Match.home_team),
         joinedload(Match.away_team),
-        joinedload(Match.competition)
+        joinedload(Match.competition),
+        joinedload(Match.round)
     ).filter(
         Match.match_date >= end_utc_naive,
         Match.match_date < next_week_end_utc,
