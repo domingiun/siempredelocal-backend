@@ -26,6 +26,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
@@ -116,6 +117,19 @@ def _build_leaderboard(polla: Polla, db: Session) -> list[dict]:
 
 # ── Endpoints públicos ─────────────────────────────────────────────────────
 
+def _participant_counts(polla_ids: list[int], db: Session) -> dict[int, int]:
+    """Una sola query COUNT agrupada — evita N lazy loads de p.participants."""
+    if not polla_ids:
+        return {}
+    rows = (
+        db.query(PollaParticipant.polla_id, func.count(PollaParticipant.id))
+        .filter(PollaParticipant.polla_id.in_(polla_ids))
+        .group_by(PollaParticipant.polla_id)
+        .all()
+    )
+    return {pid: cnt for pid, cnt in rows}
+
+
 @router.get("/admin/all")
 def admin_list_all_pollas(
     db: Session = Depends(get_db),
@@ -123,6 +137,7 @@ def admin_list_all_pollas(
 ):
     """Lista TODAS las pollas incluyendo ocultas y canceladas (solo admin)."""
     pollas = db.query(Polla).order_by(Polla.edition_year.desc()).all()
+    counts = _participant_counts([p.id for p in pollas], db)
     return [
         {
             "id": p.id,
@@ -132,7 +147,7 @@ def admin_list_all_pollas(
             "edition_year": p.edition_year,
             "entry_credits": p.entry_credits,
             "current_prize_cop": p.current_prize_cop,
-            "participant_count": len(p.participants),
+            "participant_count": counts.get(p.id, 0),
             "registration_open_at": p.registration_open_at,
             "registration_close_at": p.registration_close_at,
         }
@@ -149,6 +164,7 @@ def list_pollas(db: Session = Depends(get_db)):
         .order_by(Polla.edition_year.desc())
         .all()
     )
+    counts = _participant_counts([p.id for p in pollas], db)
     return [
         {
             "id": p.id,
@@ -158,7 +174,7 @@ def list_pollas(db: Session = Depends(get_db)):
             "edition_year": p.edition_year,
             "entry_credits": p.entry_credits,
             "current_prize_cop": p.current_prize_cop,
-            "participant_count": len(p.participants),
+            "participant_count": counts.get(p.id, 0),
             "registration_open_at": p.registration_open_at,
             "registration_close_at": p.registration_close_at,
         }
@@ -187,9 +203,9 @@ def get_polla(polla_id: int, db: Session = Depends(get_db)):
         "registration_open_at": polla.registration_open_at,
         "registration_close_at": polla.registration_close_at,
         "created_at": polla.created_at,
-        "participant_count": len(polla.participants),
         "current_prize_cop": polla.current_prize_cop,
-        "leaderboard": _build_leaderboard(polla, db),
+        "leaderboard": (leaderboard := _build_leaderboard(polla, db)),
+        "participant_count": len(leaderboard),
     }
 
 
@@ -369,6 +385,7 @@ def get_my_polla_status(
     participant = (
         db.query(PollaParticipant)
         .filter_by(polla_id=polla_id, user_id=current_user.id)
+        .options(selectinload(PollaParticipant.predictions))
         .first()
     )
 
@@ -488,6 +505,7 @@ def get_participant_scored_predictions(
     participant = (
         db.query(PollaParticipant)
         .filter_by(polla_id=polla_id, user_id=user_id)
+        .options(selectinload(PollaParticipant.user))
         .first()
     )
     if not participant:
@@ -811,7 +829,8 @@ def admin_update_rankings(
 
     _update_rankings(polla_id, db)
     db.commit()
-    return {"success": True, "participant_count": len(polla.participants)}
+    count = db.query(func.count(PollaParticipant.id)).filter_by(polla_id=polla_id).scalar()
+    return {"success": True, "participant_count": count}
 
 
 @router.post("/admin/{polla_id}/reset-close-at")
