@@ -73,222 +73,72 @@ def _group_complete(group_rows: List[CompetitionTeam]) -> bool:
     return all((r.matches_played or 0) >= 3 for r in group_rows[:4])
 
 
-def build_round_of_32_bracket(
-    competition_id: int,
-    db: Session,
-    allow_incomplete: bool = False
-) -> Dict[str, Any]:
+def get_knockout_bracket(competition_id: int, db: Session) -> Dict[str, Any]:
     """
-    Construye el bracket de dieciseisavos usando posiciones de grupo
-    y mejores terceros por subconjuntos de grupos.
+    Lee el bracket de eliminatoria directamente de la BD.
+    No computa posiciones ni ganadores — devuelve los partidos tal como están
+    cargados en cada ronda de eliminatoria, con escudo, marcador y estado.
     """
-    groups = get_group_rankings(competition_id, db)
+    from sqlalchemy.orm import joinedload as _joinedload
 
-    # Verificar que todos los grupos A-L existan y esten completos
-    required_groups = [chr(65 + i) for i in range(12)]
-    missing_groups = [g for g in required_groups if g not in groups]
-    if missing_groups:
-        return {
-            "ready": False,
-            "reason": f"Faltan grupos: {', '.join(missing_groups)}"
-        }
+    knockout_rounds = (
+        db.query(Round)
+        .filter(
+            Round.competition_id == competition_id,
+            Round.round_type.in_([t.value for t in _KNOCKOUT_TYPES]),
+        )
+        .order_by(Round.round_number.asc())
+        .all()
+    )
 
-    incomplete = [g for g, rows in groups.items() if not _group_complete(rows)]
-    if incomplete and not allow_incomplete:
-        return {
-            "ready": False,
-            "reason": f"Grupos incompletos: {', '.join(sorted(incomplete))}"
-        }
+    if not knockout_rounds:
+        return {"ready": False, "reason": "No hay rondas de eliminatoria definidas", "phases": []}
 
-    def pick(group_letter: str, position: int) -> CompetitionTeam:
-        rows = groups[group_letter]
-        return rows[position - 1]
-
-    # Mapa de terceros por grupo
-    third_by_group = {g: rows[2] for g, rows in groups.items()}
-
-    used_thirds = set()
-
-    def best_third_from(groups_subset: List[str]) -> CompetitionTeam | None:
-        candidates = [third_by_group[g] for g in groups_subset if g in third_by_group]
-        candidates = [c for c in candidates if c.team_id not in used_thirds]
-        if not candidates:
-            return None
-        candidates_sorted = sorted(candidates, key=_sort_key_points, reverse=True)
-        chosen = candidates_sorted[0]
-        used_thirds.add(chosen.team_id)
-        return chosen
-
-    # Definicion de partidos 73-88
-    # Construir primero los 8 terceros dinámicos sin asignar a partido aún
-    third_74 = best_third_from(list("ABCDF"))
-    third_77 = best_third_from(list("CDFGH"))
-    third_82 = best_third_from(list("AEHIJ"))
-    third_85 = best_third_from(list("EFGIJ"))
-
-    # Intercambiar 74↔77 y 82↔85: el ranking puro no reproduce el bracket FIFA 2026
-    third_74, third_77 = third_77, third_74
-    third_82, third_85 = third_85, third_82
-
-    matches = [
-        {"match_number": 73, "home": pick("A", 2), "away": pick("B", 2),
-         "home_label": "2° Grupo A", "away_label": "2° Grupo B"},
-        {"match_number": 74, "home": pick("E", 1), "away": third_74,
-         "home_label": "1° Grupo E", "away_label": "Mejor 3°"},
-        {"match_number": 75, "home": pick("F", 1), "away": pick("C", 2),
-         "home_label": "1° Grupo F", "away_label": "2° Grupo C"},
-        {"match_number": 76, "home": pick("C", 1), "away": pick("F", 2),
-         "home_label": "1° Grupo C", "away_label": "2° Grupo F"},
-        {"match_number": 77, "home": pick("I", 1), "away": third_77,
-         "home_label": "1° Grupo I", "away_label": "Mejor 3°"},
-        {"match_number": 78, "home": pick("E", 2), "away": pick("I", 2),
-         "home_label": "2° Grupo E", "away_label": "2° Grupo I"},
-        {"match_number": 79, "home": pick("A", 1), "away": best_third_from(list("CEFHI")),
-         "home_label": "1° Grupo A", "away_label": "Mejor 3° (C/E/F/H/I)"},
-        {"match_number": 80, "home": pick("L", 1), "away": best_third_from(list("EHIJK")),
-         "home_label": "1° Grupo L", "away_label": "Mejor 3° (E/H/I/J/K)"},
-        {"match_number": 81, "home": pick("D", 1), "away": best_third_from(list("BEFIJ")),
-         "home_label": "1° Grupo D", "away_label": "Mejor 3° (B/E/F/I/J)"},
-        {"match_number": 82, "home": pick("G", 1), "away": third_82,
-         "home_label": "1° Grupo G", "away_label": "Mejor 3°"},
-        {"match_number": 83, "home": pick("K", 2), "away": pick("L", 2),
-         "home_label": "2° Grupo K", "away_label": "2° Grupo L"},
-        {"match_number": 84, "home": pick("H", 1), "away": pick("J", 2),
-         "home_label": "1° Grupo H", "away_label": "2° Grupo J"},
-        {"match_number": 85, "home": pick("B", 1), "away": third_85,
-         "home_label": "1° Grupo B", "away_label": "Mejor 3°"},
-        {"match_number": 86, "home": pick("D", 2), "away": pick("G", 2),
-         "home_label": "2° Grupo D", "away_label": "2° Grupo G"},
-        {"match_number": 87, "home": pick("J", 1), "away": pick("H", 2),
-         "home_label": "1° Grupo J", "away_label": "2° Grupo H"},
-        {"match_number": 88, "home": pick("K", 1), "away": best_third_from(list("DEIJL")),
-         "home_label": "1° Grupo K", "away_label": "Mejor 3° (D/E/I/J/L)"},
-    ]
-
-    def to_payload(team_row: CompetitionTeam | None, label: str) -> Dict[str, Any]:
-        if not team_row:
-            return {"type": "pending", "label": label}
+    def team_slot(team) -> Dict[str, Any]:
+        if not team:
+            return {"type": "pending", "name": "Por definir", "logo_url": None}
         return {
             "type": "team",
-            "team_id": team_row.team_id,
-            "name": team_row.team.name if team_row.team else label,
-            "logo_url": team_row.team.logo_url if team_row.team else None,
-            "group_letter": team_row.group_letter,
-            "label": label,
-            "points": team_row.points,
-            "goal_difference": team_row.goal_difference,
-            "goals_for": team_row.goals_for
+            "team_id": team.id,
+            "name": team.name,
+            "logo_url": team.logo_url,
         }
 
-    def find_match(team_a: CompetitionTeam | None, team_b: CompetitionTeam | None):
-        if not team_a or not team_b:
-            return None
-        return db.query(Match).join(Round, Match.round_id == Round.id).filter(
-            Match.competition_id == competition_id,
-            Round.round_type.in_([t.value for t in _KNOCKOUT_TYPES]),
-            or_(
-                and_(Match.home_team_id == team_a.team_id, Match.away_team_id == team_b.team_id),
-                and_(Match.home_team_id == team_b.team_id, Match.away_team_id == team_a.team_id),
-            )
-        ).first()
+    phases = []
+    for round_ in knockout_rounds:
+        round_matches = (
+            db.query(Match)
+            .filter(Match.round_id == round_.id)
+            .options(_joinedload(Match.home_team), _joinedload(Match.away_team))
+            .order_by(Match.match_date.asc(), Match.id.asc())
+            .all()
+        )
 
-    def find_winner(team_a: CompetitionTeam | None, team_b: CompetitionTeam | None) -> CompetitionTeam | None:
-        if not team_a or not team_b:
-            return None
-        m = find_match(team_a, team_b)
-        if not m:
-            return None
-        hs = m.home_score or 0
-        aws = m.away_score or 0
-        if hs > aws:
-            win_id = m.home_team_id
-        elif aws > hs:
-            win_id = m.away_team_id
-        elif m.penalty_home is not None and m.penalty_away is not None:
-            win_id = m.home_team_id if m.penalty_home > m.penalty_away else m.away_team_id
-        else:
-            return None
-        return team_a if team_a.team_id == win_id else team_b
+        match_data = []
+        for m in round_matches:
+            match_data.append({
+                "match_number": m.id,
+                "home": team_slot(m.home_team),
+                "away": team_slot(m.away_team),
+                "home_score": m.home_score,
+                "away_score": m.away_score,
+                "penalty_home": m.penalty_home,
+                "penalty_away": m.penalty_away,
+                "status": m.status,
+                "match_date": m.match_date.isoformat() if m.match_date else None,
+                "stadium": m.stadium,
+                "city": m.city,
+            })
 
-    def pending(label: str) -> Dict[str, Any]:
-        return {"type": "pending", "label": label}
-
-    def bracket_entry(num: int, h_team, a_team, h_fallback: str, a_fallback: str) -> Dict[str, Any]:
-        m = find_match(h_team, a_team)
-        return {
-            "match_number": num,
-            "home": to_payload(h_team, h_fallback) if h_team else pending(h_fallback),
-            "away": to_payload(a_team, a_fallback) if a_team else pending(a_fallback),
-            "home_score": m.home_score if m else None,
-            "away_score": m.away_score if m else None,
-            "status": m.status if m else None,
-        }
-
-    round_of_32 = []
-    r32_winners: Dict[int, CompetitionTeam | None] = {}
-    for m in matches:
-        db_m = find_match(m["home"], m["away"])
-        round_of_32.append({
-            "match_number": m["match_number"],
-            "home": to_payload(m["home"], m["home_label"]),
-            "away": to_payload(m["away"], m["away_label"]),
-            "home_score": db_m.home_score if db_m else None,
-            "away_score": db_m.away_score if db_m else None,
-            "status": db_m.status if db_m else None,
+        phases.append({
+            "round_id": round_.id,
+            "round_name": round_.name,
+            "round_type": round_.round_type,
+            "round_number": round_.round_number,
+            "matches": match_data,
         })
-        r32_winners[m["match_number"]] = find_winner(m["home"], m["away"])
 
-    def w32(n): return r32_winners.get(n)
-
-    round_of_16_raw = [
-        (89, w32(73), w32(75), "Ganador 73", "Ganador 75"),
-        (90, w32(74), w32(77), "Ganador 74", "Ganador 77"),
-        (91, w32(76), w32(78), "Ganador 76", "Ganador 78"),
-        (92, w32(79), w32(80), "Ganador 79", "Ganador 80"),
-        (93, w32(83), w32(84), "Ganador 83", "Ganador 84"),
-        (94, w32(81), w32(82), "Ganador 81", "Ganador 82"),
-        (95, w32(86), w32(88), "Ganador 86", "Ganador 88"),
-        (96, w32(85), w32(87), "Ganador 85", "Ganador 87"),
-    ]
-    round_of_16 = [bracket_entry(n, h, a, hl, al) for n, h, a, hl, al in round_of_16_raw]
-    r16_winners = {n: find_winner(h, a) for n, h, a, *_ in round_of_16_raw}
-
-    def w16(n): return r16_winners.get(n)
-
-    qf_raw = [
-        (97, w16(89), w16(90), "Ganador 89", "Ganador 90"),
-        (98, w16(93), w16(94), "Ganador 93", "Ganador 94"),
-        (99, w16(91), w16(92), "Ganador 91", "Ganador 92"),
-        (100, w16(95), w16(96), "Ganador 95", "Ganador 96"),
-    ]
-    quarterfinals = [bracket_entry(n, h, a, hl, al) for n, h, a, hl, al in qf_raw]
-    qf_winners = {n: find_winner(h, a) for n, h, a, *_ in qf_raw}
-
-    def wqf(n): return qf_winners.get(n)
-
-    sf_raw = [
-        (101, wqf(97), wqf(98), "Ganador 97", "Ganador 98"),
-        (102, wqf(99), wqf(100), "Ganador 99", "Ganador 100"),
-    ]
-    semifinals = [bracket_entry(n, h, a, hl, al) for n, h, a, hl, al in sf_raw]
-    sf_winners = {n: find_winner(h, a) for n, h, a, *_ in sf_raw}
-    sf_losers  = {n: (a if find_winner(h, a) is h else h) if find_winner(h, a) else None
-                  for n, h, a, *_ in sf_raw}
-
-    third_place = [bracket_entry(103, sf_losers.get(101), sf_losers.get(102), "Perdedor 101", "Perdedor 102")]
-    final       = [bracket_entry(104, sf_winners.get(101), sf_winners.get(102), "Ganador 101", "Ganador 102")]
-
-    return {
-        "ready": True,
-        "provisional": bool(incomplete),
-        "reason": f"Grupos incompletos: {', '.join(sorted(incomplete))}" if incomplete else None,
-        "round_of_32": round_of_32,
-        "round_of_16": round_of_16,
-        "quarterfinals": quarterfinals,
-        "semifinals": semifinals,
-        "third_place": third_place,
-        "final": final
-    }
+    return {"ready": True, "phases": phases}
 
 def recalculate_competition_standings(competition_id: int, db: Session):
     """

@@ -12,7 +12,7 @@ from app.services.standings_service import (
     recalculate_competition_standings,
     get_group_rankings,
     get_best_thirds,
-    build_round_of_32_bracket
+    get_knockout_bracket,
 )
 from app.models.competition.competition import Competition
 from app.models.competition.team import CompetitionTeam, Team
@@ -297,12 +297,12 @@ def get_group_qualification(
 @router.get("/playoff-bracket")
 def get_playoff_bracket(
     competition_id: int,
-    allow_incomplete: bool = Query(True),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
-    Devuelve el bracket de dieciseisavos (partidos 73-88) usando:
-    puntos, diferencia de gol y goles a favor.
+    Devuelve las fases de eliminatoria leyendo directamente los partidos
+    ya cargados en la BD (16avos, 8avos, cuartos, semis, 3° puesto, final).
+    No calcula nada a partir de posiciones de grupo.
     """
     competition = db.query(Competition).filter(
         Competition.id == competition_id,
@@ -312,10 +312,7 @@ def get_playoff_bracket(
     if not competition:
         raise HTTPException(status_code=404, detail="Competencia no encontrada")
 
-    if competition.groups <= 0:
-        raise HTTPException(status_code=400, detail="Esta competencia no tiene fase de grupos")
-
-    bracket = build_round_of_32_bracket(competition_id, db, allow_incomplete=allow_incomplete)
+    bracket = get_knockout_bracket(competition_id, db)
     return {
         "competition_id": competition_id,
         "competition_name": competition.name,
