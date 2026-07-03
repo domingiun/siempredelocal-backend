@@ -315,6 +315,7 @@ def get_playoff_bracket(
     if competition.groups <= 0:
         raise HTTPException(status_code=400, detail="Esta competencia no tiene fase de grupos")
 
+    recalculate_competition_standings(competition_id, db)
     bracket = build_round_of_32_bracket(competition_id, db, allow_incomplete=allow_incomplete)
     return {
         "competition_id": competition_id,
