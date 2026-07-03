@@ -537,10 +537,13 @@ def create_match(
         db.commit()
         db.refresh(match_obj)
         
-        # ✅ NUEVO: LLAMAR A LAS FUNCIONES DE SINCRONIZACIÓN
-        sync_after_match_update(match_obj, db)
-        recalculate_competition_standings(match_obj.competition_id, db)
-        
+        # Sincronizar post-creación — errores aquí no deben fallar la respuesta
+        try:
+            sync_after_match_update(match_obj, db)
+            recalculate_competition_standings(match_obj.competition_id, db)
+        except Exception as _sync_err:
+            logger.error("sync post-create match %s: %s", match_obj.id, _sync_err)
+
         logger.info("match created id=%s status=%s", match_obj.id, match_obj.status)
             
         # 8. Cargar relaciones para la respuesta
@@ -693,9 +696,12 @@ def update_match(
                 original_home_score, original_away_score,
                 match_obj.home_score, match_obj.away_score)
     
-    # 11. SINCRONIZAR Y RECALCULAR
-    sync_after_match_update(match_obj, db)
-    recalculate_competition_standings(match_obj.competition_id, db)
+    # 11. SINCRONIZAR Y RECALCULAR — errores aquí no deben fallar la respuesta
+    try:
+        sync_after_match_update(match_obj, db)
+        recalculate_competition_standings(match_obj.competition_id, db)
+    except Exception as _sync_err:
+        logger.error("sync post-update match %s: %s", match_id, _sync_err)
 
     # 11.1 AUTO-FINALIZAR FECHA SI ESTE FUE EL ÚLTIMO PARTIDO EN FINALIZAR
     if original_status != MatchStatus.FINISHED.value and match_obj.status == MatchStatus.FINISHED.value:
