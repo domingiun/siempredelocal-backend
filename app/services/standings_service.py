@@ -5,6 +5,10 @@ from typing import List, Dict, Any
 from datetime import datetime, timedelta
 from app.models.competition.match import Match, MatchStatus
 from app.models.competition.team import CompetitionTeam, Team
+from app.models.competition.round import Round, RoundType
+
+# Tipos de ronda que NO deben afectar la tabla de grupos
+_KNOCKOUT_TYPES = {RoundType.ROUND_OF, RoundType.SEMIFINAL, RoundType.FINAL, RoundType.THIRD_PLACE}
 
 
 def _sort_key_points(team_row):
@@ -239,11 +243,17 @@ def recalculate_competition_standings(competition_id: int, db: Session):
 
     db.commit()
 
-    # Obtener todos los partidos finalizados
-    matches = db.query(Match).filter(
-        Match.competition_id == competition_id,
-        Match.status == MatchStatus.FINISHED
-    ).all()
+    # Solo partidos de fase de grupos (excluir eliminatorias)
+    matches = (
+        db.query(Match)
+        .join(Round, Match.round_id == Round.id)
+        .filter(
+            Match.competition_id == competition_id,
+            Match.status == MatchStatus.FINISHED,
+            Round.round_type.notin_([t.value for t in _KNOCKOUT_TYPES]),
+        )
+        .all()
+    )
 
     # Procesar cada partido
     for match in matches:
