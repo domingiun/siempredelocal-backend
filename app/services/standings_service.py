@@ -172,6 +172,7 @@ def build_round_of_32_bracket(
             "type": "team",
             "team_id": team_row.team_id,
             "name": team_row.team.name if team_row.team else label,
+            "logo_url": team_row.team.logo_url if team_row.team else None,
             "group_letter": team_row.group_letter,
             "label": label,
             "points": team_row.points,
@@ -179,28 +180,32 @@ def build_round_of_32_bracket(
             "goals_for": team_row.goals_for
         }
 
-    def find_winner(team_a: CompetitionTeam | None, team_b: CompetitionTeam | None) -> CompetitionTeam | None:
+    def find_match(team_a: CompetitionTeam | None, team_b: CompetitionTeam | None):
         if not team_a or not team_b:
             return None
-        match = db.query(Match).join(Round, Match.round_id == Round.id).filter(
+        return db.query(Match).join(Round, Match.round_id == Round.id).filter(
             Match.competition_id == competition_id,
             Round.round_type.in_([t.value for t in _KNOCKOUT_TYPES]),
-            Match.status == MatchStatus.FINISHED,
             or_(
                 and_(Match.home_team_id == team_a.team_id, Match.away_team_id == team_b.team_id),
                 and_(Match.home_team_id == team_b.team_id, Match.away_team_id == team_a.team_id),
             )
         ).first()
-        if not match:
+
+    def find_winner(team_a: CompetitionTeam | None, team_b: CompetitionTeam | None) -> CompetitionTeam | None:
+        if not team_a or not team_b:
             return None
-        hs = match.home_score or 0
-        aws = match.away_score or 0
+        m = find_match(team_a, team_b)
+        if not m:
+            return None
+        hs = m.home_score or 0
+        aws = m.away_score or 0
         if hs > aws:
-            win_id = match.home_team_id
+            win_id = m.home_team_id
         elif aws > hs:
-            win_id = match.away_team_id
-        elif match.penalty_home is not None and match.penalty_away is not None:
-            win_id = match.home_team_id if match.penalty_home > match.penalty_away else match.away_team_id
+            win_id = m.away_team_id
+        elif m.penalty_home is not None and m.penalty_away is not None:
+            win_id = m.home_team_id if m.penalty_home > m.penalty_away else m.away_team_id
         else:
             return None
         return team_a if team_a.team_id == win_id else team_b
@@ -209,21 +214,27 @@ def build_round_of_32_bracket(
         return {"type": "pending", "label": label}
 
     def bracket_entry(num: int, h_team, a_team, h_fallback: str, a_fallback: str) -> Dict[str, Any]:
+        m = find_match(h_team, a_team)
         return {
             "match_number": num,
             "home": to_payload(h_team, h_fallback) if h_team else pending(h_fallback),
             "away": to_payload(a_team, a_fallback) if a_team else pending(a_fallback),
+            "home_score": m.home_score if m else None,
+            "away_score": m.away_score if m else None,
+            "status": m.status if m else None,
         }
 
     round_of_32 = []
     r32_winners: Dict[int, CompetitionTeam | None] = {}
     for m in matches:
-        home_p = to_payload(m["home"], m["home_label"])
-        away_p = to_payload(m["away"], m["away_label"])
+        db_m = find_match(m["home"], m["away"])
         round_of_32.append({
             "match_number": m["match_number"],
-            "home": home_p,
-            "away": away_p,
+            "home": to_payload(m["home"], m["home_label"]),
+            "away": to_payload(m["away"], m["away_label"]),
+            "home_score": db_m.home_score if db_m else None,
+            "away_score": db_m.away_score if db_m else None,
+            "status": db_m.status if db_m else None,
         })
         r32_winners[m["match_number"]] = find_winner(m["home"], m["away"])
 
