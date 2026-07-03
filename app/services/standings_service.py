@@ -1,6 +1,6 @@
 # backend/app/services/standings_service.py
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, asc
+from sqlalchemy import desc, asc, or_, and_
 from typing import List, Dict, Any
 from datetime import datetime, timedelta
 from app.models.competition.match import Match, MatchStatus
@@ -179,44 +179,93 @@ def build_round_of_32_bracket(
             "goals_for": team_row.goals_for
         }
 
+    def find_winner(team_a: CompetitionTeam | None, team_b: CompetitionTeam | None) -> CompetitionTeam | None:
+        if not team_a or not team_b:
+            return None
+        match = db.query(Match).join(Round, Match.round_id == Round.id).filter(
+            Match.competition_id == competition_id,
+            Round.round_type.in_([t.value for t in _KNOCKOUT_TYPES]),
+            Match.status == MatchStatus.FINISHED,
+            or_(
+                and_(Match.home_team_id == team_a.team_id, Match.away_team_id == team_b.team_id),
+                and_(Match.home_team_id == team_b.team_id, Match.away_team_id == team_a.team_id),
+            )
+        ).first()
+        if not match:
+            return None
+        hs = match.home_score or 0
+        aws = match.away_score or 0
+        if hs > aws:
+            win_id = match.home_team_id
+        elif aws > hs:
+            win_id = match.away_team_id
+        elif match.penalty_home is not None and match.penalty_away is not None:
+            win_id = match.home_team_id if match.penalty_home > match.penalty_away else match.away_team_id
+        else:
+            return None
+        return team_a if team_a.team_id == win_id else team_b
+
+    def pending(label: str) -> Dict[str, Any]:
+        return {"type": "pending", "label": label}
+
+    def bracket_entry(num: int, h_team, a_team, h_fallback: str, a_fallback: str) -> Dict[str, Any]:
+        return {
+            "match_number": num,
+            "home": to_payload(h_team, h_fallback) if h_team else pending(h_fallback),
+            "away": to_payload(a_team, a_fallback) if a_team else pending(a_fallback),
+        }
+
     round_of_32 = []
+    r32_winners: Dict[int, CompetitionTeam | None] = {}
     for m in matches:
+        home_p = to_payload(m["home"], m["home_label"])
+        away_p = to_payload(m["away"], m["away_label"])
         round_of_32.append({
             "match_number": m["match_number"],
-            "home": to_payload(m["home"], m["home_label"]),
-            "away": to_payload(m["away"], m["away_label"])
+            "home": home_p,
+            "away": away_p,
         })
+        r32_winners[m["match_number"]] = find_winner(m["home"], m["away"])
 
-    round_of_16 = [
-        {"match_number": 89, "home_label": "Ganador 73", "away_label": "Ganador 75"},
-        {"match_number": 90, "home_label": "Ganador 74", "away_label": "Ganador 77"},
-        {"match_number": 91, "home_label": "Ganador 76", "away_label": "Ganador 78"},
-        {"match_number": 92, "home_label": "Ganador 79", "away_label": "Ganador 80"},
-        {"match_number": 93, "home_label": "Ganador 83", "away_label": "Ganador 84"},
-        {"match_number": 94, "home_label": "Ganador 81", "away_label": "Ganador 82"},
-        {"match_number": 95, "home_label": "Ganador 86", "away_label": "Ganador 88"},
-        {"match_number": 96, "home_label": "Ganador 85", "away_label": "Ganador 87"},
-    ]
+    def w32(n): return r32_winners.get(n)
 
-    quarterfinals = [
-        {"match_number": 97, "home_label": "Ganador 89", "away_label": "Ganador 90"},
-        {"match_number": 98, "home_label": "Ganador 93", "away_label": "Ganador 94"},
-        {"match_number": 99, "home_label": "Ganador 91", "away_label": "Ganador 92"},
-        {"match_number": 100, "home_label": "Ganador 95", "away_label": "Ganador 96"},
+    round_of_16_raw = [
+        (89, w32(73), w32(75), "Ganador 73", "Ganador 75"),
+        (90, w32(74), w32(77), "Ganador 74", "Ganador 77"),
+        (91, w32(76), w32(78), "Ganador 76", "Ganador 78"),
+        (92, w32(79), w32(80), "Ganador 79", "Ganador 80"),
+        (93, w32(83), w32(84), "Ganador 83", "Ganador 84"),
+        (94, w32(81), w32(82), "Ganador 81", "Ganador 82"),
+        (95, w32(86), w32(88), "Ganador 86", "Ganador 88"),
+        (96, w32(85), w32(87), "Ganador 85", "Ganador 87"),
     ]
+    round_of_16 = [bracket_entry(n, h, a, hl, al) for n, h, a, hl, al in round_of_16_raw]
+    r16_winners = {n: find_winner(h, a) for n, h, a, *_ in round_of_16_raw}
 
-    semifinals = [
-        {"match_number": 101, "home_label": "Ganador 97", "away_label": "Ganador 98"},
-        {"match_number": 102, "home_label": "Ganador 99", "away_label": "Ganador 100"},
-    ]
+    def w16(n): return r16_winners.get(n)
 
-    third_place = [
-        {"match_number": 103, "home_label": "Perdedor 101", "away_label": "Perdedor 102"}
+    qf_raw = [
+        (97, w16(89), w16(90), "Ganador 89", "Ganador 90"),
+        (98, w16(93), w16(94), "Ganador 93", "Ganador 94"),
+        (99, w16(91), w16(92), "Ganador 91", "Ganador 92"),
+        (100, w16(95), w16(96), "Ganador 95", "Ganador 96"),
     ]
+    quarterfinals = [bracket_entry(n, h, a, hl, al) for n, h, a, hl, al in qf_raw]
+    qf_winners = {n: find_winner(h, a) for n, h, a, *_ in qf_raw}
 
-    final = [
-        {"match_number": 104, "home_label": "Ganador 101", "away_label": "Ganador 102"}
+    def wqf(n): return qf_winners.get(n)
+
+    sf_raw = [
+        (101, wqf(97), wqf(98), "Ganador 97", "Ganador 98"),
+        (102, wqf(99), wqf(100), "Ganador 99", "Ganador 100"),
     ]
+    semifinals = [bracket_entry(n, h, a, hl, al) for n, h, a, hl, al in sf_raw]
+    sf_winners = {n: find_winner(h, a) for n, h, a, *_ in sf_raw}
+    sf_losers  = {n: (a if find_winner(h, a) is h else h) if find_winner(h, a) else None
+                  for n, h, a, *_ in sf_raw}
+
+    third_place = [bracket_entry(103, sf_losers.get(101), sf_losers.get(102), "Perdedor 101", "Perdedor 102")]
+    final       = [bracket_entry(104, sf_winners.get(101), sf_winners.get(102), "Ganador 101", "Ganador 102")]
 
     return {
         "ready": True,
