@@ -343,3 +343,27 @@ Cuando `VITE_POLLA_MODE=true` (variable en Vercel):
 - `score_polla_match(polla_match_id, db)` → puntúa predicciones y llama bonificaciones
 - `_maybe_compute_phase_bonuses(polla_id, phase, db)` → solo actúa cuando todos los partidos de la fase están puntuados
 - `auto_score_polla_matches_for_match(match_id, db)` → punto de entrada desde el scheduler
+
+### Dashboard polla (`PollaDashboardPage.jsx`)
+- `PredMatchCard` — tarjeta compartida entre "Mis predicciones" y "Picks de participante". Incluye chip de fase con colores (`PHASE_META`): groups=gris, r16/r32=azul, qf=violeta, sf=ámbar, final=dorado.
+- `MyPredictionsTab` — predicciones ordenadas por `match_date` desc (más reciente primero).
+- `ParticipantPicksModal` — modal "Ver picks de otro participante", también ordenado por `match_date` desc. Hereda chip de fase de `PredMatchCard`.
+
+## Bracket de eliminatoria (`/standings/playoff-bracket`)
+
+- **`get_knockout_bracket(competition_id, db)`** en `backend/app/services/standings_service.py` — lee las rondas de eliminatoria directamente de la BD. **NO computa posiciones ni ganadores dinámicamente** — devuelve los partidos tal como están cargados en cada ronda.
+- Filtra rondas por `_KNOCKOUT_TYPES = {ROUND_OF, SEMIFINAL, FINAL, THIRD_PLACE}`. Las rondas de tipo `GROUP_STAGE` nunca entran al bracket.
+- Respuesta: `{ ready, phases: [{ round_id, round_name, round_type, round_number, matches: [...] }] }` — estructura de fases, no campos fijos por ronda.
+- **No revertir a cálculo dinámico desde posiciones de grupos** — los equipos en cada partido eliminatorio ya están asignados en la BD por el admin.
+
+## Formulario de creación de jornadas (`CreateRoundPage.jsx`)
+
+- **`RoundType` enum válido:** `regular`, `group_stage`, `round_of`, `semifinal`, `final`, `third_place`. **No existe `quarterfinal`** — enviar ese valor genera 422 en Pydantic.
+- Cuartos de Final deben crearse con `round_type = "round_of"` (igual que 16avos y 8avos).
+- Si se agrega una opción de tipo de jornada en el frontend, verificar que su `value` coincida exactamente con uno de los valores del enum del backend.
+
+## Auto-fill ciudad→estadio en `MatchForm.jsx`
+
+- `CITY_STADIUM_MAP` dentro de `MatchForm` mapea las 16 ciudades sede del Mundial 2026 a su estadio.
+- Cuando `isWorldCup = true`, el campo **Ciudad** es un `<Select>`. Al seleccionar, `handleCityChange` llama `form.setFieldsValue({ stadium })`.
+- Orden en el formulario: **Ciudad primero**, luego **Estadio**.
