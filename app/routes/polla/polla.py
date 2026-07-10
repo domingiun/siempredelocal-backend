@@ -775,14 +775,15 @@ def add_match_to_polla(
 def remove_match_from_polla(
     polla_id: int,
     pm_id: int,
+    force: bool = False,
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin_user),
 ):
-    """Quitar un partido de la polla (solo si no tiene predicciones)."""
+    """Quitar un partido de la polla (solo si no tiene predicciones, salvo force=true)."""
     pm = db.get(PollaMatch, pm_id)
     if not pm or pm.polla_id != polla_id:
         raise HTTPException(status_code=404, detail="Partido no encontrado en esta polla")
-    if pm.predictions:
+    if pm.predictions and not force:
         raise HTTPException(
             status_code=400,
             detail="No se puede eliminar un partido que ya tiene predicciones"

@@ -259,6 +259,14 @@ def names_match(name_a, name_b):
 - Lógica: llama `betService.getBetDates()`, ordena por `start_datetime` desc, busca `status === 'open'`, si no hay abierta usa la primera de la lista
 - Si el fetch falla, hace fallback a `/bets`
 
+## Manejo de fechas y zona horaria
+
+- Todas las columnas de fecha/hora (`match_date`, `close_at`, etc.) son `TIMESTAMP WITHOUT TIME ZONE` en Postgres pero **almacenan UTC**, no hora local Colombia (ver fix `b4263d0` del scheduler, que tenía este mismo bug).
+- Como el backend serializa estos campos sin sufijo `Z`, `new Date(valor)` en el navegador los interpreta como **hora local** si no se fuerza lo contrario → se muestran corridos por el offset de Bogotá (UTC-5, ej. un partido a las 3:00 p.m. real se ve como 8:00 p.m.).
+- **Todo componente que muestre `match_date`/`close_at` debe forzar interpretación UTC**: agregar `Z` al string si no trae ya zona horaria, y formatear con `timeZone: 'America/Bogota'`.
+- `frontend/src/utils/dateFormatter.js` ya tiene helpers que hacen esto bien: `formatDateTimeShortUTC`, `formatDateOnlyUTC`, `formatTimeOnlyUTC`, `formatDateTableUTC`, `parseDateAsUTC`. Preferir estos en vez de `new Date(x).toLocaleString(...)` a mano.
+- Bug real encontrado (10/07/2026): `fmtDate` en `PollaAdminPage.jsx` no forzaba UTC y mostraba las horas de partidos/cierres de la polla 5h más tarde de lo real. Ya corregido — sigue el mismo patrón que `PollaDashboardPage.jsx` y `PollaPredictionsPage.jsx`.
+
 ## Módulo Polla (`/polla` y `/mundial`)
 
 ### Modo Mundial (`VITE_POLLA_MODE=true`)
@@ -314,6 +322,11 @@ Cuando `VITE_POLLA_MODE=true` (variable en Vercel):
 - Al cargar, salta automáticamente al **primer partido sin predicción guardada** (`findIndex(m => !savedInit[m.id])`).
 - Los puntos de navegación están color-codeados por resultado guardado: 🔵 azul = L, 🟡 ámbar = E, 🔴 rojo = V, 🟢 verde = eliminatoria (winner). En desktop muestran la letra (9 px); en mobile solo el color.
 - **No revertir a `current = 0`** — rompe la UX para usuarios con predicciones parciales.
+
+### Agregar partidos a una polla (`PollaAdminPage.jsx`)
+- El selector **"Fase"** del bulk-add (`bulkPhase`) queda por defecto en `groups`. **Al agregar partidos de eliminatoria (r32/r16/qf/sf/third/final) hay que cambiarlo ANTES de darle a "Agregar seleccionados"** — si no, el partido queda con `phase='groups'` y a los usuarios les aparece la UI de L/E/V en vez de "¿quién avanza?".
+- No existe endpoint para editar el `phase` de un `PollaMatch` ya creado. Para corregirlo: `DELETE /polla/admin/{polla_id}/match/{pm_id}` (bloquea si ya tiene predicciones) y volver a agregarlo con la fase correcta.
+- Si ya hay predicciones reales guardadas con la fase incorrecta, quedan huérfanas (el formato L/E/V no aplica a fases de eliminatoria) — hay que borrarlas en la tabla `polla_predictions` y avisar a los usuarios afectados para que vuelvan a pronosticar.
 
 ### Ventana de predicciones
 - `close_at = match_date - 1h` — se asigna automáticamente al agregar un partido a la polla
