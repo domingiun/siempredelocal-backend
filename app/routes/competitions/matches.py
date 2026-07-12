@@ -543,6 +543,7 @@ def create_match(
             recalculate_competition_standings(match_obj.competition_id, db)
         except Exception as _sync_err:
             logger.error("sync post-create match %s: %s", match_obj.id, _sync_err)
+            db.rollback()
 
         logger.info("match created id=%s status=%s", match_obj.id, match_obj.status)
             
@@ -702,6 +703,7 @@ def update_match(
         recalculate_competition_standings(match_obj.competition_id, db)
     except Exception as _sync_err:
         logger.error("sync post-update match %s: %s", match_id, _sync_err)
+        db.rollback()
 
     # 11.1 AUTO-FINALIZAR FECHA SI ESTE FUE EL ÚLTIMO PARTIDO EN FINALIZAR
     if original_status != MatchStatus.FINISHED.value and match_obj.status == MatchStatus.FINISHED.value:
