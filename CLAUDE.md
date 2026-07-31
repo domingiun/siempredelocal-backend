@@ -270,17 +270,25 @@ def names_match(name_a, name_b):
 ## Módulo Polla (`/polla` y `/mundial`)
 
 ### Modo Mundial (`VITE_POLLA_MODE=true`)
-**Estado actual (Mayo 2026): ACTIVO — la app está en modo polla durante el Mundial.**
+**Estado actual (31/07/2026): INACTIVO — terminó el Mundial 2026, la app volvió a modo normal.** Queda pendiente para reactivar en el próximo campeonato (ver abajo).
 
 Cuando `VITE_POLLA_MODE=true` (variable en Vercel):
 - `/` y `/home` redirigen a `/mundial`
 - `/dashboard` redirige a `/mundial/dashboard`
 - Sidebar oculta: Pronósticos, Partidos, Competencias, Equipos, Reportes
 - Sidebar admin oculta: Competencias, Equipos, Reportes, Nueva Fecha de BetDate
+- Sidebar (completo y colapsado), Home, Dashboard, recarga de créditos y ayuda **muestran** los enlaces a `/mundial*` y `/admin/polla`
 
-**Al terminar el Mundial (≈ julio 2026) → restaurar modo normal:**
-1. En Vercel → Settings → Environment Variables → cambiar `VITE_POLLA_MODE` a `false` (o eliminar la variable)
-2. Redeploy automático → todo el sistema de apuestas/BetDates vuelve a estar visible
+Cuando `VITE_POLLA_MODE=false` (o no está seteada) es al revés: se restaura el modo normal (apuestas/BetDates) y **todos** los enlaces de Polla Mundial se ocultan (sidebar, botón colapsado, banner del home, banner del dashboard, tarjeta de plan en recarga de créditos, sección de ayuda).
+
+**No se borra ninguna ruta ni dato al desactivar:** `/mundial`, `/mundial/dashboard`, `/mundial/predict`, `/mundial/checkout` y `/admin/polla` siguen registradas en `App.jsx` y accesibles por URL directa — solo dejan de estar enlazadas desde la navegación. El backend no cambia en absoluto.
+
+**Bug real encontrado (31/07/2026):** los 6 puntos de entrada a Polla listados arriba se agregaron sin condicionarlos a `POLLA_MODE` — quedaban visibles siempre, sin importar el flag. Se corrigió envolviéndolos en `POLLA_MODE ? [...] : []` / `{POLLA_MODE && (...)}`. **Si se agrega un nuevo enlace a `/mundial*` en el futuro, hay que condicionarlo igual** o volverá a aparecer aunque el flag esté en `false`.
+
+**Para reactivar en el próximo campeonato:**
+1. En Vercel → Settings → Environment Variables → cambiar `VITE_POLLA_MODE` a `true`
+2. Redeploy automático → vuelve el modo Mundial completo (rutas + navegación)
+3. Revisar que la `Polla` en la BD para el nuevo torneo tenga los partidos y fases cargados (ver sección "Agregar partidos a una polla" más abajo)
 3. No hay cambios en el backend — todos los datos siguen intactos
 
 ### Performance del frontend
