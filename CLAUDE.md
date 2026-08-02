@@ -259,6 +259,23 @@ def names_match(name_a, name_b):
 - Lógica: llama `betService.getBetDates()`, ordena por `start_datetime` desc, busca `status === 'open'`, si no hay abierta usa la primera de la lista
 - Si el fetch falla, hace fallback a `/bets`
 
+## Pronósticos gratuitos (desde 02/08/2026)
+
+**Estado actual: los Pronósticos (BetDate) son GRATIS.** No se cobran créditos por participar y el premio de cada fecha (`prize_cop`) es un monto fijo que el admin define al crear la fecha — ya no se financia con las inscripciones de los usuarios.
+
+**La función de compra de créditos, apuestas pagas y premio acumulado por inscripción SIGUE EXISTIENDO EN EL CÓDIGO — no se borró nada.** Puede ser requerida de nuevo en cualquier momento (ej. para monetizar otra vez, para un torneo especial, etc.). Todo el sistema de wallet/créditos/Nequi/transacciones sigue funcionando (compra de créditos, `/wallet`, `/purchase`, historial) — solo dejó de ser obligatorio y se ocultaron los avisos de recarga de la navegación.
+
+**Qué se tocó para hacerlo gratis** (para revertir, deshacer exactamente esto):
+- `backend/app/routes/bet/integration.py` → `place_bet`: se quitó el bloqueo de fila del wallet, la validación `betdate.required_credits != 1`, el chequeo `wallet.credits < required_credits`, la llamada a `TransactionService.place_bet_transaction` (que descontaba el crédito) y la línea `betdate.prize_cop += transaction_result["prize_contribution"]`.
+- `backend/app/schemas/bet/integration.py` → `PlaceBetResponse`: `credits_used` y `prize_contribution` ahora tienen default `0`, `credits_remaining` es `Optional`.
+- `frontend/src/context/WalletContext.jsx` → `placeBet` ya no descuenta crédito local ni crea transacción `BET_PLACEMENT`; `hasEnoughCredits()` ahora siempre retorna `true` (antes comparaba contra `wallet.credits`).
+- `frontend/src/components/bets/PlaceBetForm.jsx` y `BetDateList.jsx`: se quitaron los textos/botones "Sin créditos" y el aviso "No tienes créditos".
+- `frontend/src/components/layout/Sidebar.jsx`: se quitó el `CreditsWidget` (widget verde "Créditos Disponibles"), el botón rápido de recarga en modo colapsado, el ítem "Recargar Créditos" del menú inferior, y el badge de créditos junto a "Hacer Pronósticos".
+- `frontend/src/components/bets/MobileBetDashboard.jsx`: se quitó la barra de créditos y el banner "Solicita créditos para participar".
+- `frontend/src/pages/admin/bets/CreateBetDatePage.jsx`: se quitó el campo "Créditos Requeridos" del formulario de creación (el modelo `BetDate.required_credits` sigue existiendo en la BD, solo no se usa).
+
+**El campo `BetDate.required_credits` sigue en el modelo pero el backend ya no lo lee en `place_bet`.** Si se reactiva el cobro, hay que restaurar la validación en `place_bet` Y volver a mostrar el campo en `CreateBetDatePage.jsx`.
+
 ## Manejo de fechas y zona horaria
 
 - Todas las columnas de fecha/hora (`match_date`, `close_at`, etc.) son `TIMESTAMP WITHOUT TIME ZONE` en Postgres pero **almacenan UTC**, no hora local Colombia (ver fix `b4263d0` del scheduler, que tenía este mismo bug).
