@@ -123,9 +123,9 @@ class PlaceBetResponse(BaseModel):
     success: bool
     message: str
     bet_id: int
-    credits_used: int
-    credits_remaining: int
-    prize_contribution: int = Field(description="Cantidad añadida al premio pool")
+    credits_used: int = Field(default=0, description="Los pronósticos son gratuitos — siempre 0")
+    credits_remaining: Optional[int] = None
+    prize_contribution: int = Field(default=0, description="Cantidad añadida al premio pool")
     total_prize: int = Field(description="Premio total actualizado")
     submitted_at: Optional[str] = None
     bet_details: Optional[Dict[str, Any]] = Field(

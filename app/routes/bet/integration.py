@@ -178,32 +178,8 @@ def place_bet(
             session.commit()
             raise ValueError("Las pronósticos para esta fecha ya cerraron")
 
-        # 2. Verificar créditos — SELECT FOR UPDATE bloquea la fila durante la transacción
-        #    para evitar race condition de doble gasto (C4)
-        wallet = (
-            session.query(UserWallet)
-            .filter_by(user_id=user_id)
-            .with_for_update()
-            .first()
-        )
-        if not wallet:
-            wallet = UserWallet(
-                user_id=user_id,
-                credits=0,
-                balance_cop=0,
-                total_credits_purchased=0,
-                total_prizes_won=0
-            )
-            session.add(wallet)
-            session.flush()
-        logger.debug("wallet credits checked for user %s", user_id)
-
-        # Validar que sean exactamente 1 crédito
-        if betdate.required_credits != 1:
-            raise ValueError("Error de configuración: Se requieren exactamente 1 crédito por pronóstico")
-
-        if wallet.credits < betdate.required_credits:
-            raise ValueError(f"Créditos insuficientes. Necesitas {betdate.required_credits}, tienes {wallet.credits}")
+        # Los pronósticos son gratuitos — no se descuentan créditos ni se cobra entrada.
+        # El premio de cada fecha es fijo (betdate.prize_cop), definido por el admin al crearla.
 
         # 3. Validar predicciones
         if len(body.predictions) != 10:
@@ -241,39 +217,25 @@ def place_bet(
             )
             session.add(bet_pred)
 
-        # 7. Registrar transacción de apuesta
-        transaction_result = TransactionService.place_bet_transaction(
-            session=session,
-            user_id=user_id,
-            bet_id=bet.id,
-            bet_date_id=body.bet_date_id,
-            credits_used=betdate.required_credits
-        )
-
-        # 8. Añadir al premio de la fecha usando la contribución de la transacción
-        betdate.prize_cop += transaction_result["prize_contribution"]
-
-        # 9. Commit todas las transacciones
+        # 7. Commit — sin transacción financiera ni cobro, los pronósticos son gratuitos
         session.commit()
         logger.info("place_bet OK — bet_id=%s user_id=%s", bet.id, user_id)
 
-        # 10. Preparar detalles adicionales
+        # 8. Preparar detalles adicionales
         bet_details = {
             "bet_date_name": betdate.name,
             "close_datetime": betdate.close_datetime.isoformat() if betdate.close_datetime else None,
             "predictions_count": len(body.predictions),
             "first_match_date": min([m.match_date for m in betdate.matches]).isoformat() if betdate.matches else None,
-            "prize_contribution": transaction_result["prize_contribution"],
-            "profit_to_house": transaction_result["profit_to_house"]
         }
 
         return PlaceBetResponse(
             success=True,
             message="Pronósticos registrada exitosamente",
             bet_id=bet.id,
-            credits_used=betdate.required_credits,
-            credits_remaining=wallet.credits,
-            prize_contribution=transaction_result["prize_contribution"],
+            credits_used=0,
+            credits_remaining=None,
+            prize_contribution=0,
             total_prize=betdate.prize_cop + betdate.accumulated_prize,
             submitted_at=bet.submitted_at.isoformat() if bet.submitted_at else None,
             bet_details=bet_details
