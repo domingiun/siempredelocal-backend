@@ -21,20 +21,16 @@ class Bet(Base):
     
     def get_ranking_info(self):
         """Obtener información para ranking"""
-        exact_scores = 0
-        correct_winners = 0
-        
+        correct_picks = 0
+
         for prediction in self.predictions:
-            if prediction.points == 3:
-                exact_scores += 1
-            elif prediction.points == 1:
-                correct_winners += 1
-        
+            if prediction.points > 0:
+                correct_picks += 1
+
         return {
             "user_id": self.user_id,
             "user_name": self.user.username if self.user else "Usuario",
             "points": self.points,
-            "exact_scores": exact_scores,
-            "correct_winners": correct_winners,
+            "correct_picks": correct_picks,
             "rank": self.rank
         }

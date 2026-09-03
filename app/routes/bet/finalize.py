@@ -24,6 +24,7 @@ from app.schemas.bet.finalize import (
     NotificationData
 )
 from app.services.transaction_service import TransactionService
+from app.constants.bet_constants import MIN_POINTS_TO_WIN
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 import time
@@ -136,8 +137,7 @@ def finalize_betdate(
                     user_id=winner.user_id,
                     username=winner.username,
                     points=winner.points,
-                    exact_scores=winner.exact_scores,
-                    correct_winners=winner.correct_winners,
+                    correct_picks=winner.correct_picks,
                     bet_id=winner.bet_id,
                     submitted_at=winner.submitted_at,
                     prize_amount=total_prize
@@ -162,8 +162,7 @@ def finalize_betdate(
                         user_id=winner.user_id,
                         username=winner.username,
                         points=winner.points,
-                        exact_scores=winner.exact_scores,
-                        correct_winners=winner.correct_winners,
+                        correct_picks=winner.correct_picks,
                         bet_id=winner.bet_id,
                         submitted_at=winner.submitted_at,
                         prize_amount=prize_amount
@@ -199,9 +198,9 @@ def finalize_betdate(
             
             if ranking_data.ranking:
                 top_user = ranking_data.ranking[0]
-                message = f"Ningún usuario alcanzó 13 puntos. Máximo: {top_user.points} puntos por {top_user.username}. Premio acumulado: ${prize_accumulated:,} COP"
+                message = f"Ningún usuario alcanzó {MIN_POINTS_TO_WIN} puntos. Máximo: {top_user.points} puntos por {top_user.username}. Premio acumulado: ${prize_accumulated:,} COP"
             else:
-                message = "Ningún usuario alcanzó 13 puntos. Premio acumulado."
+                message = f"Ningún usuario alcanzó {MIN_POINTS_TO_WIN} puntos. Premio acumulado."
         
         # 6. Actualizar estado de la fecha
         betdate.status = "finished"
@@ -449,21 +448,18 @@ def get_finalization_summary(
         max_points = max(points)
         min_points = min(points)
         
-        # Contar aciertos exactos y ganadores
-        total_exact_scores = 0
-        total_correct_winners = 0
-        
+        # Contar aciertos
+        total_correct_picks = 0
+
         for bet in bets:
             for prediction in bet.predictions:
-                if prediction.points == 3:
-                    total_exact_scores += 1
-                elif prediction.points == 1:
-                    total_correct_winners += 1
-        
-        users_above_13 = len([bet for bet in bets if bet.points >= 13])
+                if prediction.points > 0:
+                    total_correct_picks += 1
+
+        users_above_13 = len([bet for bet in bets if bet.points >= MIN_POINTS_TO_WIN])
     else:
         average_points = max_points = min_points = 0
-        total_exact_scores = total_correct_winners = users_above_13 = 0
+        total_correct_picks = users_above_13 = 0
     
     # Obtener premios
     betdate = session.query(BetDate).get(bet_date_id)
@@ -478,8 +474,7 @@ def get_finalization_summary(
         max_points=max_points,
         min_points=min_points,
         users_above_13=users_above_13,
-        total_exact_scores=total_exact_scores,
-        total_correct_winners=total_correct_winners,
+        total_correct_picks=total_correct_picks,
         prize_pool_before=prize_pool_before,
         prize_pool_after=prize_pool_after,
         processing_time_ms=0
@@ -494,12 +489,11 @@ def get_finalization_summary(
                 "position": entry.position,
                 "username": entry.username,
                 "points": entry.points,
-                "exact_scores": entry.exact_scores,
-                "correct_winners": entry.correct_winners
+                "correct_picks": entry.correct_picks,
             }
             for entry in ranking_response.data.ranking[:3]
         ]
-    except:
+    except Exception:
         ranking_top_3 = []
     
     # Resumen de partidos

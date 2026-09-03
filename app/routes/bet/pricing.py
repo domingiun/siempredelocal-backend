@@ -9,6 +9,7 @@ from app.constants.bet_constants import (
     PROFIT_PER_CREDIT,
     REQUIRED_CREDITS_PER_BET,
     MIN_POINTS_TO_WIN,
+    MAX_PREDICTIONS_PER_BET,
     CREDIT_TO_CASH_RATE,
     WITHDRAWAL_FEE_PERCENT,
     MIN_WITHDRAWAL_AMOUNT,
@@ -51,7 +52,7 @@ def get_credit_pricing_info():
         profit_per_credit=PROFIT_PER_CREDIT,
         required_credits_per_bet=REQUIRED_CREDITS_PER_BET,
         min_points_to_win=MIN_POINTS_TO_WIN,
-        max_predictions_per_bet=10
+        max_predictions_per_bet=MAX_PREDICTIONS_PER_BET
     )
 
 

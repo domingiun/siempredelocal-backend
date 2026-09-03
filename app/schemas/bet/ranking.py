@@ -3,14 +3,15 @@ from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel, Field
 
+from app.constants.bet_constants import MIN_POINTS_TO_WIN
+
 
 # ==================== ENTRY DE RANKING ====================
 class RankingEntryBase(BaseModel):
     """Base para entrada de ranking"""
     user_id: int
     points: int = 0
-    exact_scores: int = 0
-    correct_winners: int = 0
+    correct_picks: int = 0
     position: int = 1
 
 class RankingEntryCreate(RankingEntryBase):
@@ -46,7 +47,7 @@ class RankingRead(RankingBase):
     """Para leer ranking completo"""
     id: Optional[int] = None
     status: str
-    winner_required_points: int = Field(default=13, description="Puntos mínimos para ganar premio")
+    winner_required_points: int = Field(default=MIN_POINTS_TO_WIN, description="Puntos mínimos para ganar premio")
     ranking: List[RankingEntryRead]
     generated_at: datetime
     
@@ -122,9 +123,8 @@ class RankingStats(BaseModel):
     average_points: float
     max_points: int
     min_points: int
-    users_above_13: int = Field(description="Usuarios que califican para premio")
-    total_exact_scores: int
-    total_correct_winners: int
+    users_above_13: int = Field(description=f"Usuarios que califican para premio (>= {MIN_POINTS_TO_WIN} puntos)")
+    total_correct_picks: int
     most_common_score: Optional[str] = Field(description="Marcador más común predicho")
     
     class Config:

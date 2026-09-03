@@ -4,6 +4,7 @@ from sqlalchemy.orm import relationship, validates
 from sqlalchemy.ext.hybrid import hybrid_property
 from datetime import datetime, timedelta
 from app.db import Base
+from app.constants.bet_constants import MAX_BETDATE_MATCHES
 import enum
 
 # Definir la tabla asociativa PRIMERO
@@ -55,13 +56,13 @@ class BetDate(Base):
     @validates('matches')
     def validate_matches(self, key, matches):
         """
-        Validar que sean exactamente 10 partidos.
+        Validar que sean exactamente MAX_BETDATE_MATCHES partidos.
         Este método se llama cuando se asigna una NUEVA lista de matches.
         """
         # Si matches es una lista (cuando se crea/actualiza)
         if isinstance(matches, list):
-            if len(matches) != 10:
-                raise ValueError("Una fecha de pronósticos debe tener exactamente 10 partidos")
+            if len(matches) != MAX_BETDATE_MATCHES:
+                raise ValueError(f"Una fecha de pronósticos debe tener exactamente {MAX_BETDATE_MATCHES} partidos")
         # Si matches es un objeto Match individual (cuando se añade uno por uno)
         # En este caso, no validamos aquí, validamos en el servicio
         

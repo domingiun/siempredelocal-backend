@@ -15,6 +15,7 @@ from app.core.security import get_current_user
 from app.core.dependencies import get_current_admin_user
 from app.models.user.user import User
 from app.services.bet_service import BetService
+from app.constants.bet_constants import MAX_BETDATE_MATCHES, MIN_POINTS_TO_WIN
 from app.schemas.bet.integration import (
     AvailableMatchesResponse,
     AvailableMatch,
@@ -79,7 +80,7 @@ def get_available_matches(
             matches=available_matches,
             total_count=len(available_matches),
             competition_id=competition_id,
-            available_for_betdate=len(available_matches) >= 10
+            available_for_betdate=len(available_matches) >= MAX_BETDATE_MATCHES
         )
         
     except Exception as e:
@@ -182,8 +183,8 @@ def place_bet(
         # El premio de cada fecha es fijo (betdate.prize_cop), definido por el admin al crearla.
 
         # 3. Validar predicciones
-        if len(body.predictions) != 10:
-            raise ValueError("Debe hacer exactamente 10 predicciones")
+        if len(body.predictions) != MAX_BETDATE_MATCHES:
+            raise ValueError(f"Debe hacer exactamente {MAX_BETDATE_MATCHES} predicciones")
 
         # Verificar que todos los partidos sean de esta fecha
         betdate_match_ids = [m.id for m in betdate.matches]
@@ -211,8 +212,7 @@ def place_bet(
             bet_pred = BetPrediction(
                 bet_id=bet.id,
                 match_id=pred.match_id,
-                predicted_home_score=pred.predicted_home_score,
-                predicted_away_score=pred.predicted_away_score,
+                predicted_result=pred.predicted_result,
                 points=0
             )
             session.add(bet_pred)
@@ -361,8 +361,8 @@ def validate_bet(
     ).first() is not None
     
     # Verificar predicciones
-    if len(request.predictions) != 10:
-        errors.append("Debe hacer exactamente 10 predicciones")
+    if len(request.predictions) != MAX_BETDATE_MATCHES:
+        errors.append(f"Debe hacer exactamente {MAX_BETDATE_MATCHES} predicciones")
     
     # Verificar partidos de la fecha
     if betdate:
@@ -370,11 +370,6 @@ def validate_bet(
         for pred in request.predictions:
             if pred.match_id not in betdate_match_ids:
                 errors.append(f"El partido ID {pred.match_id} no pertenece a esta fecha")
-    
-    # Advertencias por marcadores extremos
-    for pred in request.predictions:
-        if pred.predicted_home_score > 5 or pred.predicted_away_score > 5:
-            warnings.append(f"Marcador alto en partido {pred.match_id}")
     
     valid = len(errors) == 0 and betdate_is_open and user_has_credits
     
@@ -447,8 +442,8 @@ def get_user_betting_status(
     total_points = sum(bet.points for bet in user_bets)
     average_points = total_points / total_bets if total_bets > 0 else 0
     
-    # Contar "victorias" (pronósticos con puntos >= 13)
-    wins = len([bet for bet in user_bets if bet.points >= 13])
+    # Contar "victorias" (pronósticos con puntos >= MIN_POINTS_TO_WIN)
+    wins = len([bet for bet in user_bets if bet.points >= MIN_POINTS_TO_WIN])
     
     # Total de premios ganados (sumatoria de transacciones PRIZE_WIN completadas)
     total_prizes_won = (
@@ -543,8 +538,8 @@ def get_community_predictions(
                 "away_team": away_name,
                 "home_logo": home_logo,
                 "away_logo": away_logo,
-                "predicted_home": pred.predicted_home_score,
-                "predicted_away": pred.predicted_away_score,
+                "predicted_result": pred.predicted_result,
+                "actual_result": pred._get_actual_result(),
                 "actual_home": match.home_score,
                 "actual_away": match.away_score,
                 "match_status": match.status,
@@ -597,8 +592,7 @@ def get_my_bets_enriched(
             predictions.append({
                 "id": pred.id,
                 "match_id": pred.match_id,
-                "predicted_home_score": pred.predicted_home_score,
-                "predicted_away_score": pred.predicted_away_score,
+                "predicted_result": pred.predicted_result,
                 "points": pred.points,
                 "match": {
                     "id": match.id,

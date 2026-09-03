@@ -8,6 +8,7 @@ from app.models.bet.BetDate import BetDate, bet_date_matches
 from app.models.bet.Bet import Bet
 from app.models.competition.match import Match
 from app.schemas.bet.BetDate import BetDateCreate, BetDateRead
+from app.constants.bet_constants import MAX_BETDATE_MATCHES
 from datetime import timedelta
 from app.services.bet_service import BetService
 from app.core.dependencies import get_current_admin_user
@@ -33,11 +34,11 @@ def create_betdate(
     session: Session = Depends(get_db),
     _admin: User = Depends(get_current_admin_user),
 ):
-    if len(data.match_ids) != 10:
-        raise HTTPException(status_code=400, detail="Deben ser exactamente 10 partidos")
+    if len(data.match_ids) != MAX_BETDATE_MATCHES:
+        raise HTTPException(status_code=400, detail=f"Deben ser exactamente {MAX_BETDATE_MATCHES} partidos")
 
     matches = session.query(Match).filter(Match.id.in_(data.match_ids)).all()
-    if len(matches) != 10:
+    if len(matches) != MAX_BETDATE_MATCHES:
         raise HTTPException(status_code=400, detail="Uno o más partidos no existen")
 
     close_datetime = data.close_datetime
@@ -90,6 +91,8 @@ def update_betdate(
     # Solo se pueden cambiar partidos si está abierta y sin apuestas
     match_ids_changed = set(data.match_ids) != {m.id for m in (betdate.matches or [])}
     if match_ids_changed:
+        if len(data.match_ids) != MAX_BETDATE_MATCHES:
+            raise HTTPException(status_code=400, detail=f"Deben ser exactamente {MAX_BETDATE_MATCHES} partidos")
         if betdate.status not in ("open",):
             raise HTTPException(
                 status_code=400,

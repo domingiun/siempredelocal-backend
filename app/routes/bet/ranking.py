@@ -8,6 +8,7 @@ from app.db import get_db
 from app.models.bet.BetDate import BetDate
 from app.models.bet.Bet import Bet
 from app.models.bet.transaction import Transaction, TransactionType, TransactionStatus
+from app.constants.bet_constants import MIN_POINTS_TO_WIN
 from sqlalchemy import func
 from app.schemas.bet.ranking import (
     RankingEntryRead as RankingEntry,
@@ -55,8 +56,7 @@ def get_betdate_ranking(bet_date_id: int, session: Session = Depends(get_db)):
     ranking_data = []
     for bet in bets:
         total_points = 0
-        exact_scores = 0
-        correct_winners = 0
+        correct_picks = 0
 
         # Calcular puntos para cada prediccion
         for prediction in bet.predictions:
@@ -69,11 +69,9 @@ def get_betdate_ranking(bet_date_id: int, session: Session = Depends(get_db)):
 
             total_points += points
 
-            # Contar tipos de aciertos
-            if points == 3:
-                exact_scores += 1
-            elif points == 1:
-                correct_winners += 1
+            # Contar aciertos
+            if points > 0:
+                correct_picks += 1
 
         # Actualizar puntos totales de la apuesta
         if bet.points != total_points:
@@ -85,8 +83,7 @@ def get_betdate_ranking(bet_date_id: int, session: Session = Depends(get_db)):
             {
                 "bet": bet,
                 "points": total_points,
-                "exact_scores": exact_scores,
-                "correct_winners": correct_winners,
+                "correct_picks": correct_picks,
                 "user_id": bet.user_id,
                 "username": bet.user.username if bet.user else f"Usuario {bet.user_id}",
                 "bet_id": bet.id,
@@ -107,17 +104,16 @@ def get_betdate_ranking(bet_date_id: int, session: Session = Depends(get_db)):
                 user_id=data["user_id"],
                 username=data["username"],
                 points=data["points"],
-                exact_scores=data["exact_scores"],
-                correct_winners=data["correct_winners"],
+                correct_picks=data["correct_picks"],
                 position=i,
                 bet_id=data["bet_id"],
                 submitted_at=data["submitted_at"],
             )
         )
 
-    # 7. Verificar si hay ganador (>=13 puntos)
+    # 7. Verificar si hay ganador (>= MIN_POINTS_TO_WIN puntos)
     qualifies_for_prize = False
-    if ranking_entries and ranking_entries[0].points >= 13:
+    if ranking_entries and ranking_entries[0].points >= MIN_POINTS_TO_WIN:
         qualifies_for_prize = True
 
     prize_paid_total = (

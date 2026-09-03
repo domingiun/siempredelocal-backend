@@ -3,6 +3,8 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field, validator
 
+from app.constants.bet_constants import MIN_POINTS_TO_WIN
+
 
 # ==================== REQUEST DE FINALIZACIÓN ====================
 class FinalizeRequest(BaseModel):
@@ -27,8 +29,7 @@ class WinnerInfo(BaseModel):
     user_id: int
     username: str
     points: int
-    exact_scores: int = Field(description="Marcadores exactos acertados")
-    correct_winners: int = Field(description="Ganadores acertados")
+    correct_picks: int = Field(description="Partidos acertados (L/E/V)")
     bet_id: int
     submitted_at: datetime
     prize_amount: int = Field(description="Premio ganado")
@@ -43,7 +44,7 @@ class FinalizeResponse(BaseModel):
     betdate_name: str
     status: str
     qualified_for_prize: bool = Field(
-        description="Si algún usuario calificó para premio (≥13 puntos)"
+        description=f"Si algún usuario calificó para premio (≥{MIN_POINTS_TO_WIN} puntos)"
     )
     winner_info: Optional[WinnerInfo] = None
     winners_info: Optional[list[WinnerInfo]] = None
@@ -119,9 +120,8 @@ class FinalizationStats(BaseModel):
     average_points: float
     max_points: int
     min_points: int
-    users_above_13: int = Field(description="Usuarios que alcanzaron 13+ puntos")
-    total_exact_scores: int
-    total_correct_winners: int
+    users_above_13: int = Field(description=f"Usuarios que alcanzaron {MIN_POINTS_TO_WIN}+ puntos")
+    total_correct_picks: int
     prize_pool_before: int = Field(description="Premio total antes de finalizar")
     prize_pool_after: int = Field(description="Premio total después de finalizar")
     processing_time_ms: int = Field(description="Tiempo de procesamiento en ms")

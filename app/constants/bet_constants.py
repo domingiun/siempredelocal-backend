@@ -9,10 +9,10 @@ PROFIT_PER_CREDIT: Final[int] = CREDIT_PRICE_COP - PRIZE_CONTRIBUTION_PER_CREDIT
 
 # ==================== REGLAS DE APUESTAS ====================
 REQUIRED_CREDITS_PER_BET: Final[int] = 1  # 1 crédito por pronóstico
-MIN_POINTS_TO_WIN: Final[int] = 13  # Puntos mínimos para ganar
-MAX_PREDICTIONS_PER_BET: Final[int] = 10  # 10 partidos por fecha
-MIN_BETDATE_MATCHES: Final[int] = 10  # Mínimo de partidos por fecha
-MAX_BETDATE_MATCHES: Final[int] = 10  # Máximo de partidos por fecha
+MIN_POINTS_TO_WIN: Final[int] = 8  # Puntos mínimos para ganar (sobre 12 posibles)
+MAX_PREDICTIONS_PER_BET: Final[int] = 12  # 12 partidos por fecha
+MIN_BETDATE_MATCHES: Final[int] = 12  # Mínimo de partidos por fecha
+MAX_BETDATE_MATCHES: Final[int] = 12  # Máximo de partidos por fecha
 
 # ==================== CONVERSIÓN DE CRÉDITOS ====================
 CREDIT_TO_CASH_RATE: Final[float] = 4500.0  # 1 crédito = $4,500 COP

@@ -1,6 +1,8 @@
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import List, Literal, Optional, Dict, Any
 from pydantic import BaseModel, Field, validator
+
+from app.constants.bet_constants import MAX_BETDATE_MATCHES
 
 
 # ==================== PARTIDOS DISPONIBLES ====================
@@ -25,7 +27,7 @@ class AvailableMatchesResponse(BaseModel):
     competition_id: Optional[int] = None
     available_for_betdate: bool = Field(
         default=True,
-        description="Indica si hay suficientes partidos (≥10) para crear fecha"
+        description=f"Indica si hay suficientes partidos (≥{MAX_BETDATE_MATCHES}) para crear fecha"
     )
     
     class Config:
@@ -39,9 +41,9 @@ class CreateBetDateRequest(BaseModel):
     start_datetime: datetime = Field(description="Fecha/hora de inicio de la fecha")
     match_ids: List[int] = Field(
         ...,
-        min_items=10,
-        max_items=10,
-        description="IDs de exactamente 10 partidos"
+        min_items=MAX_BETDATE_MATCHES,
+        max_items=MAX_BETDATE_MATCHES,
+        description=f"IDs de exactamente {MAX_BETDATE_MATCHES} partidos"
     )
     prize_cop: int = Field(
         default=0,
@@ -90,24 +92,18 @@ class BetDateCreatedResponse(BaseModel):
 class PredictionRequest(BaseModel):
     """Request para una predicción individual"""
     match_id: int
-    predicted_home_score: int = Field(ge=0, le=20, description="Goles del equipo local")
-    predicted_away_score: int = Field(ge=0, le=20, description="Goles del equipo visitante")
-    
-    @validator('predicted_home_score', 'predicted_away_score')
-    def validate_realistic_score(cls, v):
-        """Validar que el marcador sea realista (opcional)"""
-        if v > 15:
-            raise ValueError("El marcador parece poco realista")
-        return v
+    predicted_result: Literal['L', 'E', 'V'] = Field(
+        description="L = gana el local, E = empate, V = gana el visitante"
+    )
 
 class PlaceBetRequest(BaseModel):
     """Request completo para colocar una apuesta"""
     bet_date_id: int
     predictions: List[PredictionRequest] = Field(
         ...,
-        min_items=10,
-        max_items=10,
-        description="Lista de 10 predicciones"
+        min_items=MAX_BETDATE_MATCHES,
+        max_items=MAX_BETDATE_MATCHES,
+        description=f"Lista de {MAX_BETDATE_MATCHES} predicciones"
     )
     
     @validator('predictions')
